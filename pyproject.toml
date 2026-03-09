@@ -1,0 +1,16 @@
+[project]
+name = "macro-event-ml-trading-engine"
+version = "0.1.0"
+description = "Event-driven multi-sleeve trading engine skeleton"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.0.2",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
