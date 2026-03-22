@@ -209,3 +209,7 @@ __marimo__/
 .DS_Store
 .vscode/
 .idea/
+
+# Project outputs
+output/
+data/cache/

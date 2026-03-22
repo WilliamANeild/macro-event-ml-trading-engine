@@ -15,3 +15,5 @@ class ExpressionDecision:
     weights: dict[str, float] = field(default_factory=dict)
     confidence: float = 0.0
     metadata: dict[str, Any] = field(default_factory=dict)
+    hedge_fraction: float = 0.0
+    regime: str = "normal"

@@ -13,3 +13,7 @@ class DerivativesOverlay:
     notionals: dict[str, float] = field(default_factory=dict)
     premium_budget_used: float = 0.0
     metadata: dict[str, Any] = field(default_factory=dict)
+    structure: str = "none"
+    days_held: int = 0
+    unwind_fraction: float = 0.0
+    activation_reason: str = ""

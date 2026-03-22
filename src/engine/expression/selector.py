@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from src.engine.meta.schemas import MetaSignal
 
+from .ml_selector import MLExpressionSelector  # noqa: F401
 from .schemas import ExpressionDecision
 
 

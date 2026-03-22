@@ -15,3 +15,5 @@ class MetaSignal:
     direction: str
     source_experts: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    theme_scores: dict[str, float] = field(default_factory=dict)
+    regime: str = "normal"

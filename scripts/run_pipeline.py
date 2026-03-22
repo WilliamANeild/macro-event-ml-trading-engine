@@ -1,10 +1,14 @@
+from __future__ import annotations
+
+import argparse
+import os
+import sys
 from datetime import date
 
 from src.engine.backtest.engine import BacktestEngine
 from src.engine.data.loader import MockDataSource
 from src.engine.derivatives.overlay import DerivativesOverlayManager
 from src.engine.events.builder import EventFeatureBuilder
-from src.engine.expression.selector import ExpressionSelector
 from src.engine.experts.registry import get_experts
 from src.engine.experts.schemas import ExpertContext
 from src.engine.features.builder import FeatureBuilder
@@ -13,7 +17,7 @@ from src.engine.portfolio.optimizer import PortfolioOptimizer
 from src.engine.universe.registry import get_universe
 
 
-def main() -> None:
+def run_mock() -> None:
     print("stage 0: load universe")
     universe = get_universe()
     symbols = [instrument.symbol for instrument in universe]
@@ -71,6 +75,7 @@ def main() -> None:
     print(meta_signal)
 
     print("stage 8: select expression")
+    from src.engine.expression.selector import ExpressionSelector
     selector = ExpressionSelector()
     expression_decision = selector.select(meta_signal)
     print(expression_decision)
@@ -91,6 +96,157 @@ def main() -> None:
     print(backtest_result)
 
     print("stage 12: pipeline complete")
+
+
+def run_full() -> None:
+    from src.engine.data.synthetic import SyntheticDataGenerator
+    from src.engine.data.synthetic_events import SyntheticEventGenerator
+    from src.engine.expression.ml_selector import MLExpressionSelector
+
+    print("stage 0: load universe")
+    universe = get_universe()
+    symbols = [inst.symbol for inst in universe]
+    print(f"loaded {len(symbols)} instruments")
+
+    print("stage 1: generate synthetic data")
+    data_gen = SyntheticDataGenerator()
+    prices = data_gen.load_prices(symbols)
+    returns = data_gen.get_returns()
+    print(f"generated {len(returns)} days of synthetic data")
+
+    print("stage 2: build feature history")
+    features = data_gen.generate_feature_history()
+    print(f"built {len(features)} feature rows")
+
+    print("stage 3: generate event history")
+    evt_gen = SyntheticEventGenerator(data_gen.event_manifest)
+    dates = data_gen.get_dates()
+    events = evt_gen.generate(dates[0], len(dates))
+    print(f"generated {len(events)} event rows")
+
+    # Use latest feature/event for single-step pipeline demo
+    feat = features[-1]
+    evt = events[-1]
+
+    print("stage 4: build expert context")
+    context = ExpertContext(
+        as_of_date=feat.as_of_date,
+        theme="macro",
+        subtheme="all",
+        feature_row=feat.values,
+        event_features=evt.values,
+        universe=symbols,
+    )
+
+    print("stage 5: run experts")
+    experts = get_experts()
+    predictions = [expert.predict(context) for expert in experts]
+    for p in predictions:
+        print(f"  {p.expert_name} -> score={p.probability_active:.3f}")
+
+    print("stage 6: combine meta signal")
+    stacker = MetaStacker()
+    stacker.set_recent_returns(returns)
+    meta_signal = stacker.combine(predictions)
+    print(f"  score={meta_signal.score:.3f} conf={meta_signal.confidence:.3f} regime={meta_signal.regime}")
+
+    print("stage 7: select expression (ML)")
+    selector = MLExpressionSelector(universe=universe)
+    expression = selector.select(meta_signal)
+    print(f"  type={expression.expression_type} symbols={expression.target_symbols}")
+
+    print("stage 8: optimize portfolio")
+    optimizer = PortfolioOptimizer(returns=returns, universe=universe)
+    portfolio = optimizer.build_target(expression, regime=meta_signal.regime, signal_score=meta_signal.score)
+    print(f"  weights={portfolio.weights} gross={portfolio.gross_exposure:.4f}")
+
+    print("stage 9: build derivatives overlay")
+    overlay_mgr = DerivativesOverlayManager()
+    overlay = overlay_mgr.build_overlay(meta_signal, portfolio)
+    print(f"  type={overlay.overlay_type} structure={overlay.structure}")
+
+    print("stage 10: pipeline complete")
+
+
+def run_live() -> None:
+    from src.engine.data.yahoo_loader import YahooDataSource
+    from src.engine.expression.ml_selector import MLExpressionSelector
+
+    print("stage 0: load universe")
+    universe = get_universe()
+    symbols = [inst.symbol for inst in universe]
+    print(f"loaded {len(symbols)} instruments")
+
+    print("stage 1: load live market data (Yahoo Finance)")
+    yahoo = YahooDataSource()
+    returns = yahoo.load_returns(symbols, start="2023-01-01")
+    print(f"loaded {len(returns)} days of returns for {list(returns.columns)}")
+
+    # Use latest returns for features
+    as_of_date = returns.index[-1].date()
+    feat_values: dict[str, float] = {}
+    for sym in symbols:
+        feat_values[f"{sym}_return_1d"] = float(returns[sym].iloc[-1])
+        feat_values[f"{sym}_return_5d"] = float(returns[sym].iloc[-5:].sum())
+        feat_values[f"{sym}_vol_20d"] = float(returns[sym].iloc[-20:].std())
+
+    print("stage 2: build expert context")
+    context = ExpertContext(
+        as_of_date=as_of_date,
+        theme="macro",
+        subtheme="all",
+        feature_row=feat_values,
+        event_features={},
+        universe=symbols,
+    )
+
+    print("stage 3: run experts")
+    experts = get_experts()
+    predictions = [expert.predict(context) for expert in experts]
+
+    print("stage 4: combine meta signal")
+    stacker = MetaStacker()
+    stacker.set_recent_returns(returns)
+    meta_signal = stacker.combine(predictions)
+    print(f"  score={meta_signal.score:.3f} conf={meta_signal.confidence:.3f} regime={meta_signal.regime}")
+
+    print("stage 5: select expression")
+    selector = MLExpressionSelector(universe=universe)
+    expression = selector.select(meta_signal)
+    print(f"  type={expression.expression_type} symbols={expression.target_symbols}")
+
+    print("stage 6: optimize portfolio")
+    optimizer = PortfolioOptimizer(returns=returns, universe=universe)
+    portfolio = optimizer.build_target(expression, regime=meta_signal.regime, signal_score=meta_signal.score)
+    print(f"  weights={portfolio.weights}")
+
+    print("stage 7: build derivatives overlay")
+    overlay_mgr = DerivativesOverlayManager()
+    overlay = overlay_mgr.build_overlay(meta_signal, portfolio)
+    print(f"  type={overlay.overlay_type}")
+
+    print("stage 8: pipeline complete")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Macro Event ML Trading Pipeline")
+    parser.add_argument(
+        "--mode",
+        choices=["mock", "full", "live", "backtest"],
+        default="mock",
+        help="Pipeline mode: mock (smoke test), full (synthetic), live (Yahoo/FRED), backtest",
+    )
+    args = parser.parse_args()
+
+    if args.mode == "mock":
+        run_mock()
+    elif args.mode == "full":
+        run_full()
+    elif args.mode == "live":
+        run_live()
+    elif args.mode == "backtest":
+        from scripts.run_backtest import main as run_backtest
+        run_backtest()
 
 
 if __name__ == "__main__":
