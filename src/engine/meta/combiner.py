@@ -71,5 +71,5 @@ class MetaCombiner:
         theme_scores = {}
         for p in predictions:
             theme_scores[p.theme] = p.probability_active * p.severity_score
-        direction = predictions[0].direction if predictions else "neutral"
+        direction = "long" if score > 0.55 else ("short" if score < 0.45 else "neutral")
         return theme_scores, score, confidence, direction
