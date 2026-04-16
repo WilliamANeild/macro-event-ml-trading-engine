@@ -19,6 +19,7 @@ class MetaStacker:
         self.combiner = combiner
         self.regime_detector = regime_detector
         self._recent_returns: pd.DataFrame | None = None
+        self._validation_scores: list[float] = []
 
     def fit(
         self,
@@ -30,11 +31,30 @@ class MetaStacker:
             splitter = WalkForwardSplitter()
             splits = splitter.split(len(labels))
             if splits:
-                # Use last split's train set for final fit
+                # Validate across all splits to check combiner stability
+                self._validation_scores = []
+                for train_idx, test_idx in splits:
+                    train_preds = [historical_predictions[i] for i in train_idx]
+                    train_labels = labels[train_idx]
+                    self.combiner.fit(train_preds, train_labels)
+
+                    # Score on test set
+                    correct = 0
+                    for i in test_idx:
+                        _, score, _, direction = self.combiner.predict(historical_predictions[i])
+                        actual = labels[i]
+                        predicted = 1 if score > 0.5 else 0
+                        if predicted == int(actual):
+                            correct += 1
+                    accuracy = correct / len(test_idx) if len(test_idx) > 0 else 0.0
+                    self._validation_scores.append(accuracy)
+
+                # Final fit on the last split's full training window
                 train_idx, _ = splits[-1]
                 train_preds = [historical_predictions[i] for i in train_idx]
                 train_labels = labels[train_idx]
                 self.combiner.fit(train_preds, train_labels)
+
         if self.regime_detector is not None and price_history is not None:
             self.regime_detector.fit(price_history)
             self._recent_returns = price_history
@@ -52,12 +72,18 @@ class MetaStacker:
                 predictions
             )
             confidence = sum(p.confidence_score for p in predictions) / len(predictions)
-            direction = first.direction
+            direction = "long" if score > 0.55 else ("short" if score < 0.45 else "neutral")
             theme_scores = {}
 
         regime = "normal"
         if self.regime_detector is not None and self._recent_returns is not None:
             regime = self.regime_detector.detect(self._recent_returns)
+
+        metadata: dict = {"note": "meta signal from stacker"}
+        if self._validation_scores:
+            metadata["wf_accuracy_mean"] = float(np.mean(self._validation_scores))
+            metadata["wf_accuracy_std"] = float(np.std(self._validation_scores))
+            metadata["wf_n_splits"] = len(self._validation_scores)
 
         return MetaSignal(
             as_of_date=first.as_of_date,
@@ -67,7 +93,7 @@ class MetaStacker:
             confidence=confidence,
             direction=direction,
             source_experts=[p.expert_name for p in predictions],
-            metadata={"note": "meta signal from stacker"},
+            metadata=metadata,
             theme_scores=theme_scores,
             regime=regime,
         )
