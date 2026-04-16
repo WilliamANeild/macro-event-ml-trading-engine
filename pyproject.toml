@@ -12,6 +12,8 @@ dependencies = [
     "matplotlib>=3.8",
     "yfinance>=0.2.36",
     "fredapi>=0.5.2",
+    "pyarrow>=14.0",
+    "pandas-market-calendars>=4.3",
 ]
 
 [project.optional-dependencies]

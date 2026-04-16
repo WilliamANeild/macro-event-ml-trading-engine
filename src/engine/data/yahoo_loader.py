@@ -13,14 +13,7 @@ class YahooDataSource(BaseDataSource):
     def __init__(self, cache: CacheManager | None = None) -> None:
         self.cache = cache or CacheManager()
 
-    def load_prices(self, symbols: list[str]) -> dict[str, list[float]]:
-        result: dict[str, list[float]] = {}
-        for sym in symbols:
-            df = self._fetch(sym)
-            result[sym] = df["Close"].tolist()
-        return result
-
-    def load_returns(
+    def load_prices(
         self,
         symbols: list[str],
         start: str = "2020-01-01",
@@ -30,9 +23,17 @@ class YahooDataSource(BaseDataSource):
         frames = {}
         for sym in symbols:
             df = self._fetch(sym, start, end)
-            frames[sym] = df["Close"].pct_change().dropna()
-        returns = pd.DataFrame(frames).dropna()
-        return returns
+            frames[sym] = df["Close"]
+        return pd.DataFrame(frames).ffill()
+
+    def load_returns(
+        self,
+        symbols: list[str],
+        start: str = "2020-01-01",
+        end: str | None = None,
+    ) -> pd.DataFrame:
+        prices = self.load_prices(symbols, start, end)
+        return prices.pct_change().dropna()
 
     def _fetch(
         self,
@@ -41,7 +42,12 @@ class YahooDataSource(BaseDataSource):
         end: str | None = None,
     ) -> pd.DataFrame:
         end = end or str(date.today())
-        cache_key = f"yahoo_{symbol}_{start}_{end}"
+        end_week = (
+            pd.Timestamp(end)
+            .to_period("W")
+            .start_time.strftime("%Y-%m-%d")
+        )
+        cache_key = f"yahoo_{symbol}_{start}_{end_week}"
         if self.cache.has(cache_key):
             return self.cache.load(cache_key)
         ticker = yf.Ticker(symbol)
