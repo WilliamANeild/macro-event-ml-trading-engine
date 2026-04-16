@@ -72,7 +72,7 @@ class MetaStacker:
                 predictions
             )
             confidence = sum(p.confidence_score for p in predictions) / len(predictions)
-            direction = first.direction
+            direction = "long" if score > 0.55 else ("short" if score < 0.45 else "neutral")
             theme_scores = {}
 
         regime = "normal"
