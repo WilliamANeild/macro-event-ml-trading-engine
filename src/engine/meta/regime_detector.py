@@ -4,18 +4,34 @@ import numpy as np
 import pandas as pd
 
 
+DEFAULT_PROXY_SYMBOLS = ["SPY", "TLT", "GLD", "HYG", "EEM"]
+
+
 class RegimeDetector:
-    def __init__(self, vol_window: int = 20, mom_window: int = 20) -> None:
+    def __init__(
+        self,
+        vol_window: int = 20,
+        mom_window: int = 20,
+        proxy_symbols: list[str] | None = None,
+    ) -> None:
         self.vol_window = vol_window
         self.mom_window = mom_window
+        self.proxy_symbols = proxy_symbols or DEFAULT_PROXY_SYMBOLS
         self._vol_mean: float = 0.0
         self._vol_std: float = 1.0
         self._mom_mean: float = 0.0
         self._mom_std: float = 1.0
         self._fitted = False
 
+    def _select_columns(self, returns: pd.DataFrame) -> pd.Series:
+        """Use proxy symbols if available, otherwise fall back to equal-weight all columns."""
+        available = [s for s in self.proxy_symbols if s in returns.columns]
+        if available:
+            return returns[available].mean(axis=1)
+        return returns.mean(axis=1)
+
     def fit(self, returns: pd.DataFrame) -> None:
-        portfolio_returns = returns.mean(axis=1)
+        portfolio_returns = self._select_columns(returns)
         rolling_vol = portfolio_returns.rolling(self.vol_window).std().dropna()
         rolling_mom = portfolio_returns.rolling(self.mom_window).sum().dropna()
         self._vol_mean = float(rolling_vol.mean())
@@ -27,7 +43,7 @@ class RegimeDetector:
     def detect(self, recent_returns: pd.DataFrame) -> str:
         if not self._fitted:
             return "normal"
-        portfolio_returns = recent_returns.mean(axis=1)
+        portfolio_returns = self._select_columns(recent_returns)
         if len(portfolio_returns) < self.vol_window:
             return "normal"
         vol = float(portfolio_returns.iloc[-self.vol_window :].std())

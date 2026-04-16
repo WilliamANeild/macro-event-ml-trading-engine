@@ -8,28 +8,50 @@ from src.engine.experts.schemas import ExpertPrediction
 
 DIRECTION_MAP = {"long": 1.0, "short": -1.0, "neutral": 0.0}
 
+# Neutral defaults when an expert is missing: prob=0.5, severity=0.0, confidence=0.5, direction=0.0
+_NEUTRAL_SLOT = [0.5, 0.0, 0.5, 0.0]
+_FEATURES_PER_EXPERT = 4
+
 
 class MetaCombiner:
-    def __init__(self, method: str = "logistic") -> None:
+    def __init__(self, method: str = "logistic", expert_names: list[str] | None = None) -> None:
         self.method = method
         self.model: LogisticRegression | Ridge | None = None
         self._fitted = False
+        self._expert_names: list[str] = expert_names or []
+
+    def _register_experts(self, prediction_lists: list[list[ExpertPrediction]]) -> None:
+        """Learn expert names from training data if not provided upfront."""
+        if self._expert_names:
+            return
+        seen: dict[str, None] = {}
+        for preds in prediction_lists:
+            for p in preds:
+                if p.expert_name not in seen:
+                    seen[p.expert_name] = None
+        self._expert_names = list(seen.keys())
 
     def _encode_predictions(self, predictions: list[ExpertPrediction]) -> np.ndarray:
+        lookup: dict[str, ExpertPrediction] = {p.expert_name: p for p in predictions}
         features = []
-        for p in predictions:
-            features.extend([
-                p.probability_active,
-                p.severity_score,
-                p.confidence_score,
-                DIRECTION_MAP.get(p.direction, 0.0),
-            ])
+        for name in self._expert_names:
+            p = lookup.get(name)
+            if p is not None:
+                features.extend([
+                    p.probability_active,
+                    p.severity_score,
+                    p.confidence_score,
+                    DIRECTION_MAP.get(p.direction, 0.0),
+                ])
+            else:
+                features.extend(_NEUTRAL_SLOT)
         return np.array(features)
 
     def _encode_batch(self, prediction_lists: list[list[ExpertPrediction]]) -> np.ndarray:
         return np.array([self._encode_predictions(preds) for preds in prediction_lists])
 
     def fit(self, prediction_lists: list[list[ExpertPrediction]], labels: np.ndarray) -> None:
+        self._register_experts(prediction_lists)
         X = self._encode_batch(prediction_lists)
         if self.method == "logistic":
             self.model = LogisticRegression(solver="saga", C=1.0, l1_ratio=1.0, max_iter=1000)
