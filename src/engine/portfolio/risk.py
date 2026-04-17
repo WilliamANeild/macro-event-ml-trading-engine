@@ -12,7 +12,9 @@ class RiskEstimator:
         return np.array(returns.cov()) * 252
 
     def ewma_covariance(self, returns: pd.DataFrame) -> np.ndarray:
-        return np.array(returns.ewm(halflife=self.halflife).cov().iloc[-len(returns.columns) :]) * 252
+        ewm_cov = returns.ewm(halflife=self.halflife).cov()
+        last_date = returns.index[-1]
+        return np.array(ewm_cov.loc[last_date]) * 252
 
     def estimate(self, returns: pd.DataFrame, method: str = "ewma") -> np.ndarray:
         if method == "ewma" and len(returns) > self.halflife:

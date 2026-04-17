@@ -33,7 +33,7 @@ def main(data_mode: str = "synthetic") -> None:
         universe = get_universe()
         symbols = [inst.symbol for inst in universe]
         yahoo = YahooDataSource()
-        returns = yahoo.load_returns(symbols, start="2022-01-01")
+        returns = yahoo.load_returns(symbols, start_date="2022-01-01")
         print(f"Loaded {len(returns)} days of live data")
 
     print("Running walk-forward backtest...")

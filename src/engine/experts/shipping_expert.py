@@ -138,7 +138,7 @@ class ShippingChokePointExpert(BaseExpert):
             1.0,
             0.4 * chokepoint_intensity
             + 0.3 * incident_novelty
-            + 0.2 * min(1.0, incident_count / 5.0),  # Normalize to 0-1
+            + 0.2 * min(1.0, incident_count / 5.0)  # Normalize to 0-1
             + 0.1 * port_stress,
         )
         

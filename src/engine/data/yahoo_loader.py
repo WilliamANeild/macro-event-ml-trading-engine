@@ -29,10 +29,10 @@ class YahooDataSource(BaseDataSource):
     def load_returns(
         self,
         symbols: list[str],
-        start: str = "2020-01-01",
-        end: str | None = None,
+        start_date: str | None = "2020-01-01",
+        end_date: str | None = None,
     ) -> pd.DataFrame:
-        prices = self.load_prices(symbols, start, end)
+        prices = self.load_prices(symbols, start_date or "2020-01-01", end_date)
         return prices.pct_change().dropna()
 
     def _fetch(

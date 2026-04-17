@@ -16,3 +16,7 @@ class BacktestResult:
     max_drawdown: float = 0.0
     attribution: dict[str, Any] = field(default_factory=dict)
     event_log: list[dict[str, Any]] = field(default_factory=list)
+    benchmark_returns: dict[str, list[float]] = field(default_factory=dict)
+    benchmark_equity: dict[str, list[float]] = field(default_factory=dict)
+    benchmark_sharpe: dict[str, float] = field(default_factory=dict)
+    dates: list[str] = field(default_factory=list)

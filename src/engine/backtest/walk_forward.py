@@ -9,6 +9,7 @@ from src.engine.backtest.attribution import AttributionEngine, TradeRecord
 from src.engine.backtest.metrics import (
     compute_drawdowns,
     compute_hit_rate,
+    compute_information_ratio,
     compute_max_drawdown,
     compute_sharpe,
 )
@@ -34,9 +35,11 @@ class WalkForwardBacktester:
         self,
         data_gen: SyntheticDataGenerator | None = None,
         rebalance_freq: int = 5,
+        retrain_interval: int | None = None,
     ) -> None:
         self.data_gen = data_gen or SyntheticDataGenerator()
         self.rebalance_freq = rebalance_freq
+        self.retrain_interval = retrain_interval
 
     def run(
         self,
@@ -78,6 +81,17 @@ class WalkForwardBacktester:
         costs: list[float] = []
         current_weights: dict[str, float] = {}
         event_log: list[dict] = []
+        rebalance_count: int = 0
+
+        # Benchmark tracking
+        spy_equity = 1.0
+        bal_equity = 1.0  # 60/40 SPY/TLT
+        spy_returns: list[float] = []
+        bal_returns: list[float] = []
+        spy_equity_curve = [1.0]
+        bal_equity_curve = [1.0]
+        has_spy = "SPY" in returns.columns
+        has_tlt = "TLT" in returns.columns
 
         for i, dt in enumerate(dates):
             if isinstance(dt, pd.Timestamp):
@@ -96,10 +110,41 @@ class WalkForwardBacktester:
                 daily_returns.append(0.0)
                 equity_curve.append(equity)
 
+            # Benchmark daily returns
+            if has_spy and i < len(returns):
+                spy_r = float(returns["SPY"].iloc[i])
+            else:
+                spy_r = 0.0
+            if has_tlt and i < len(returns):
+                tlt_r = float(returns["TLT"].iloc[i])
+            else:
+                tlt_r = 0.0
+            bal_r = 0.6 * spy_r + 0.4 * tlt_r
+
+            spy_returns.append(spy_r)
+            bal_returns.append(bal_r)
+            spy_equity *= 1 + spy_r
+            bal_equity *= 1 + bal_r
+            spy_equity_curve.append(spy_equity)
+            bal_equity_curve.append(bal_equity)
+
             # Rebalance at frequency
             if i % self.rebalance_freq != 0:
                 overlay_mgr.tick_day()
                 continue
+
+            # Periodic retraining of experts
+            rebalance_count += 1
+            if (
+                self.retrain_interval is not None
+                and rebalance_count % self.retrain_interval == 0
+            ):
+                experts = get_experts()
+                stacker = MetaStacker()
+                selector = MLExpressionSelector(universe=universe)
+                optimizer = PortfolioOptimizer(
+                    returns=returns.iloc[:i], universe=universe
+                )
 
             # Get features
             feat = feature_dates.get(dt)
@@ -177,6 +222,11 @@ class WalkForwardBacktester:
         attr_decomp = attribution.decompose_returns()
         event_replay = attribution.event_replay(self.data_gen.event_manifest)
 
+        # Benchmark metrics
+        spy_sharpe = compute_sharpe(spy_returns)
+        bal_sharpe = compute_sharpe(bal_returns)
+        spy_ir = compute_information_ratio(daily_returns, spy_returns)
+
         return BacktestResult(
             returns=daily_returns,
             trades=trades,
@@ -187,6 +237,10 @@ class WalkForwardBacktester:
             max_drawdown=max_dd,
             attribution=attr_decomp,
             event_log=event_log,
+            benchmark_returns={"SPY": spy_returns, "60_40": bal_returns},
+            benchmark_equity={"SPY": spy_equity_curve, "60_40": bal_equity_curve},
+            benchmark_sharpe={"SPY": spy_sharpe, "60_40": bal_sharpe},
+            dates=[str(d) for d in dates],
             metadata={
                 "n_days": len(dates),
                 "n_rebalances": len(trades),
@@ -194,5 +248,6 @@ class WalkForwardBacktester:
                 "hit_rate": compute_hit_rate(daily_returns),
                 "total_costs": round(sum(costs), 6),
                 "event_replay": event_replay,
+                "info_ratio_vs_spy": round(spy_ir, 4),
             },
         )

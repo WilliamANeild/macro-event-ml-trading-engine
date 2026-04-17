@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pipeline Flowchart</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #ffffff;
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 60px 40px;
+  }
+
+  .flowchart {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    max-width: 1600px;
+    width: 100%;
+  }
+
+  .step {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .box {
+    width: 100%;
+    max-width: 180px;
+    padding: 28px 16px;
+    border-radius: 14px;
+    color: #ffffff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.10);
+    transition: transform 0.2s;
+  }
+
+  .box-title {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    line-height: 1.3;
+    margin-bottom: 10px;
+  }
+
+  .box-sub {
+    font-size: 11.5px;
+    font-weight: 400;
+    opacity: 0.88;
+    line-height: 1.45;
+  }
+
+  /* Color palette — shades of blue + one purple */
+  .c1 { background: #0B2545; }
+  .c2 { background: #13497B; }
+  .c3 { background: #1B6AAF; }
+  .c4 { background: #6B4C9A; } /* purple accent */
+  .c5 { background: #2180C7; }
+  .c6 { background: #1565A8; }
+  .c7 { background: #0D3B66; }
+
+  /* Arrow between steps */
+  .arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 48px;
+  }
+
+  .arrow svg {
+    width: 40px;
+    height: 18px;
+  }
+
+  /* Responsive: stack vertically on narrow screens */
+  @media (max-width: 1100px) {
+    .flowchart {
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+    }
+    .arrow {
+      transform: rotate(90deg);
+      width: 40px;
+      height: 48px;
+    }
+    .box {
+      max-width: 260px;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="flowchart">
+
+  <!-- Step 1 -->
+  <div class="step">
+    <div class="box c1">
+      <div class="box-title">Event + Market Inputs</div>
+      <div class="box-sub">News, macro, and price data</div>
+    </div>
+  </div>
+
+  <div class="arrow">
+    <svg viewBox="0 0 40 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line x1="0" y1="9" x2="30" y2="9" stroke="#1a1a1a" stroke-width="2.2"/>
+      <polygon points="30,3 40,9 30,15" fill="#1a1a1a"/>
+    </svg>
+  </div>
+
+  <!-- Step 2 -->
+  <div class="step">
+    <div class="box c2">
+      <div class="box-title">Feature Layer</div>
+      <div class="box-sub">Regime, stress, and event features</div>
+    </div>
+  </div>
+
+  <div class="arrow">
+    <svg viewBox="0 0 40 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line x1="0" y1="9" x2="30" y2="9" stroke="#1a1a1a" stroke-width="2.2"/>
+      <polygon points="30,3 40,9 30,15" fill="#1a1a1a"/>
+    </svg>
+  </div>
+
+  <!-- Step 3 -->
+  <div class="step">
+    <div class="box c3">
+      <div class="box-title">Localized Experts</div>
+      <div class="box-sub">Theme-specific signal models</div>
+    </div>
+  </div>
+
+  <div class="arrow">
+    <svg viewBox="0 0 40 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line x1="0" y1="9" x2="30" y2="9" stroke="#1a1a1a" stroke-width="2.2"/>
+      <polygon points="30,3 40,9 30,15" fill="#1a1a1a"/>
+    </svg>
+  </div>
+
+  <!-- Step 4 — Purple accent -->
+  <div class="step">
+    <div class="box c4">
+      <div class="box-title">Meta Layer</div>
+      <div class="box-sub">Combines expert outputs</div>
+    </div>
+  </div>
+
+  <div class="arrow">
+    <svg viewBox="0 0 40 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line x1="0" y1="9" x2="30" y2="9" stroke="#1a1a1a" stroke-width="2.2"/>
+      <polygon points="30,3 40,9 30,15" fill="#1a1a1a"/>
+    </svg>
+  </div>
+
+  <!-- Step 5 -->
+  <div class="step">
+    <div class="box c5">
+      <div class="box-title">Trade Expression</div>
+      <div class="box-sub">ETF, single-name, or blend</div>
+    </div>
+  </div>
+
+  <div class="arrow">
+    <svg viewBox="0 0 40 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line x1="0" y1="9" x2="30" y2="9" stroke="#1a1a1a" stroke-width="2.2"/>
+      <polygon points="30,3 40,9 30,15" fill="#1a1a1a"/>
+    </svg>
+  </div>
+
+  <!-- Step 6 -->
+  <div class="step">
+    <div class="box c6">
+      <div class="box-title">Portfolio Construction</div>
+      <div class="box-sub">Sizing, caps, and constraints</div>
+    </div>
+  </div>
+
+  <div class="arrow">
+    <svg viewBox="0 0 40 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line x1="0" y1="9" x2="30" y2="9" stroke="#1a1a1a" stroke-width="2.2"/>
+      <polygon points="30,3 40,9 30,15" fill="#1a1a1a"/>
+    </svg>
+  </div>
+
+  <!-- Step 7 -->
+  <div class="step">
+    <div class="box c7">
+      <div class="box-title">Optional Overlay</div>
+      <div class="box-sub">Convexity in extreme regimes</div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

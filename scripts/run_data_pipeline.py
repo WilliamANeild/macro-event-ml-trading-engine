@@ -33,7 +33,7 @@ def run():
         print(f"  Batch {i // BATCH_SIZE + 1}: {batch[0]} ... {batch[-1]}")
         for sym in batch:
             try:
-                yahoo._fetch(sym, start=START_DATE)
+                yahoo.load_prices([sym], start=START_DATE)
                 print(f"    OK {sym}")
             except Exception as e:
                 print(f"    FAILED {sym}: {e}")

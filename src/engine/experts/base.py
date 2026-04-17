@@ -20,6 +20,7 @@ class BaseExpert(ABC):
     def __init__(self) -> None:
         self.model: RandomForestClassifier | RandomForestRegressor | None = None
         self._fitted = False
+        self._feature_names: list[str] | None = None
 
     @abstractmethod
     def predict(self, context: ExpertContext) -> ExpertPrediction:
@@ -60,6 +61,13 @@ class BaseExpert(ABC):
                 random_state=kwargs.get("random_state", 42),
                 n_jobs=-1,
             )
+        # Store feature names if available from DataFrame columns or explicit param
+        if isinstance(X, pd.DataFrame):
+            self._feature_names = list(X.columns)
+        elif "feature_names" in kwargs:
+            self._feature_names = list(kwargs["feature_names"])
+        else:
+            self._feature_names = None
         self.model.fit(X, y)
         self._fitted = True
 
@@ -94,10 +102,11 @@ class BaseExpert(ABC):
             return {}
         if hasattr(self.model, "feature_importances_"):
             importances = self.model.feature_importances_
-            # Return normalized feature importances with feature_N names
-            # This enables auditing of which specific features drove predictions
+            names = self._feature_names or [
+                f"feature_{i}" for i in range(len(importances))
+            ]
             return {
-                f"feature_{i}": float(importance)
-                for i, importance in enumerate(importances)
+                name: float(importance)
+                for name, importance in zip(names, importances)
             }
         return {}

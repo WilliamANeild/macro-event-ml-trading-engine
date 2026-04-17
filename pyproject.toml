@@ -14,6 +14,7 @@ dependencies = [
     "fredapi>=0.5.2",
     "pyarrow>=14.0",
     "pandas-market-calendars>=4.3",
+    "feedparser>=6.0",
 ]
 
 [project.optional-dependencies]

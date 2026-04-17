@@ -63,6 +63,20 @@ class MetaStacker:
         self._recent_returns = returns
 
     def combine(self, predictions: list[ExpertPrediction]) -> MetaSignal:
+        if not predictions:
+            return MetaSignal(
+                as_of_date="",
+                theme="",
+                subtheme="",
+                score=0.5,
+                confidence=0.0,
+                direction="neutral",
+                source_experts=[],
+                metadata={"note": "empty predictions list"},
+                theme_scores={},
+                regime="normal",
+            )
+
         first = predictions[0]
 
         if self.combiner is not None:

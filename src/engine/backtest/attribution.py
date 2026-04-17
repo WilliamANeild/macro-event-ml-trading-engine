@@ -36,9 +36,18 @@ class AttributionEngine:
         for rec in self.trade_log:
             theme_pnl[rec.theme] = theme_pnl.get(rec.theme, 0.0) + rec.daily_pnl
             if rec.hedge_weights:
-                hedge_pnl += sum(rec.hedge_weights.values()) * 0.001  # simplified
+                # Defensive hedges move inversely to the portfolio.
+                # Compute hedge P&L as dot(hedge_weights, -portfolio_return)
+                # where portfolio_return is approximated from daily_pnl and
+                # the sum of core position weights (notional-weighted return).
+                core_exposure = sum(abs(w) for w in rec.weights.values()) if rec.weights else 1.0
+                portfolio_return = rec.daily_pnl / core_exposure if core_exposure else 0.0
+                hedge_return = -portfolio_return  # defensive hedge proxy
+                hedge_pnl += sum(
+                    w * hedge_return for w in rec.hedge_weights.values()
+                )
             if rec.overlay_type not in ("none", "unwind"):
-                overlay_pnl -= rec.cost * 0.5  # simplified premium drag
+                overlay_pnl -= rec.cost  # actual premium / cost drag
             total_costs += rec.cost
 
         return {

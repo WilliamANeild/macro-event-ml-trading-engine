@@ -11,9 +11,44 @@ from src.engine.backtest.schemas import BacktestResult
 
 def plot_equity_curve(result: BacktestResult) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(12, 5))
-    ax.plot(result.equity_curve, linewidth=1.5, color="steelblue")
-    ax.set_title("Equity Curve")
-    ax.set_xlabel("Day")
+
+    # Build x-axis: use actual dates if available, otherwise integer trading days
+    has_dates = bool(result.dates)
+    if has_dates:
+        # equity_curve has len(dates)+1 entries (initial equity + one per day)
+        # Prepend a synthetic "start" label for the initial equity point
+        from datetime import datetime, timedelta
+        try:
+            first = datetime.strptime(result.dates[0], "%Y-%m-%d").date()
+            start_label = str(first - timedelta(days=1))
+        except (ValueError, IndexError):
+            start_label = "Start"
+        x_labels = [start_label] + list(result.dates)
+        x = range(len(result.equity_curve))
+    else:
+        x = range(len(result.equity_curve))
+        x_labels = None
+
+    ax.plot(x, result.equity_curve, linewidth=1.5, color="steelblue", label="Strategy")
+
+    # Overlay benchmark equity curves if available
+    bench_styles = {"SPY": ("orange", "SPY"), "60_40": ("green", "60/40 (SPY/TLT)")}
+    if result.benchmark_equity:
+        for key, (color, label) in bench_styles.items():
+            curve = result.benchmark_equity.get(key)
+            if curve:
+                ax.plot(range(len(curve)), curve, linewidth=1.2, color=color,
+                        linestyle="--", alpha=0.7, label=label)
+    ax.legend(loc="upper left")
+
+    ax.set_title("Portfolio Equity Curve")
+    if has_dates and x_labels:
+        step = max(1, len(x_labels) // 12)
+        ax.set_xticks(list(x)[::step])
+        ax.set_xticklabels(x_labels[::step], rotation=45, ha="right")
+        ax.set_xlabel("Date")
+    else:
+        ax.set_xlabel("Trading Day")
     ax.set_ylabel("Equity")
     ax.axhline(y=1.0, color="gray", linestyle="--", alpha=0.5)
     ax.grid(True, alpha=0.3)

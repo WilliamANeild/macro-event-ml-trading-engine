@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+from src.engine.backtest.metrics import compute_calmar, compute_sortino
 from src.engine.backtest.schemas import BacktestResult
 
 
 class ReportBuilder:
     def build_summary(self, result: BacktestResult) -> str:
+        sortino = compute_sortino(result.returns)
+        calmar = compute_calmar(result.returns, result.equity_curve)
         lines = [
             "=" * 50,
             "BACKTEST SUMMARY REPORT",
             "=" * 50,
             f"Sharpe Ratio:     {result.sharpe:.3f}",
+            f"Sortino Ratio:    {sortino:.3f}",
+            f"Calmar Ratio:     {calmar:.3f}",
             f"Max Drawdown:     {result.max_drawdown:.3%}",
             f"Final Equity:     {result.metadata.get('final_equity', 'N/A')}",
             f"Hit Rate:         {result.metadata.get('hit_rate', 0):.1%}",
@@ -17,6 +22,17 @@ class ReportBuilder:
             f"Rebalances:       {result.metadata.get('n_rebalances', 0)}",
             f"Total Costs:      {result.metadata.get('total_costs', 0):.6f}",
             f"Total Return:     {sum(result.returns):.4%}" if result.returns else "Total Return: N/A",
+            "",
+            "--- Benchmark Comparison ---",
+            f"SPY Sharpe:       {result.benchmark_sharpe.get('SPY', 0):.3f}",
+            f"60/40 Sharpe:     {result.benchmark_sharpe.get('60_40', 0):.3f}",
+            f"Info Ratio (SPY): {result.metadata.get('info_ratio_vs_spy', 0):.3f}",
+            f"Excess vs SPY:    {(sum(result.returns) - sum(result.benchmark_returns.get('SPY', []))):.4%}"
+            if result.returns and result.benchmark_returns.get("SPY")
+            else "Excess vs SPY:    N/A",
+            f"Excess vs 60/40:  {(sum(result.returns) - sum(result.benchmark_returns.get('60_40', []))):.4%}"
+            if result.returns and result.benchmark_returns.get("60_40")
+            else "Excess vs 60/40:  N/A",
             "=" * 50,
         ]
         return "\n".join(lines)

@@ -165,7 +165,7 @@ class GDELTLoader:
             df = df[df["EventRootCode"].isin(self._relevant_roots)]
 
         events: list[GDELTEvent] = []
-        for _, row in df.iterrows():
+        for row in df.itertuples(index=False):
             try:
                 event = self._row_to_event(row)
                 if event is not None:
@@ -175,10 +175,10 @@ class GDELTLoader:
 
         return events
 
-    def _row_to_event(self, row: pd.Series) -> GDELTEvent | None:
-        """Convert a single GDELT row to a GDELTEvent."""
-        cameo_code = str(row.get("EventCode", ""))
-        cameo_root = str(row.get("EventRootCode", ""))
+    def _row_to_event(self, row) -> GDELTEvent | None:
+        """Convert a single GDELT named-tuple row to a GDELTEvent."""
+        cameo_code = str(getattr(row, "EventCode", ""))
+        cameo_root = str(getattr(row, "EventRootCode", ""))
 
         # Parse date from DATEADDED (YYYYMMDDHHMMSS) or Day (YYYYMMDD)
         event_date = _parse_gdelt_date(row)
@@ -186,17 +186,17 @@ class GDELTLoader:
             return None
 
         # Parse coordinates
-        lat = _safe_float(row.get("ActionGeo_Lat"))
-        lon = _safe_float(row.get("ActionGeo_Long"))
+        lat = _safe_float(getattr(row, "ActionGeo_Lat", None))
+        lon = _safe_float(getattr(row, "ActionGeo_Long", None))
 
         # Parse numeric fields
-        goldstein = _safe_float(row.get("GoldsteinScale")) or 0.0
-        tone = _safe_float(row.get("AvgTone")) or 0.0
-        mentions = int(_safe_float(row.get("NumMentions")) or 0)
-        sources = int(_safe_float(row.get("NumSources")) or 0)
-        articles = int(_safe_float(row.get("NumArticles")) or 0)
+        goldstein = _safe_float(getattr(row, "GoldsteinScale", None)) or 0.0
+        tone = _safe_float(getattr(row, "AvgTone", None)) or 0.0
+        mentions = int(_safe_float(getattr(row, "NumMentions", None)) or 0)
+        sources = int(_safe_float(getattr(row, "NumSources", None)) or 0)
+        articles = int(_safe_float(getattr(row, "NumArticles", None)) or 0)
 
-        source_url = str(row.get("SOURCEURL", ""))
+        source_url = str(getattr(row, "SOURCEURL", "") or "")
         source_domain = ""
         if source_url:
             try:
@@ -208,8 +208,8 @@ class GDELTLoader:
             event_date=event_date,
             cameo_code=cameo_code,
             cameo_root=cameo_root,
-            actor1_country=str(row.get("Actor1CountryCode", "") or ""),
-            actor2_country=str(row.get("Actor2CountryCode", "") or ""),
+            actor1_country=str(getattr(row, "Actor1CountryCode", "") or ""),
+            actor2_country=str(getattr(row, "Actor2CountryCode", "") or ""),
             lat=lat,
             lon=lon,
             goldstein_scale=goldstein,
@@ -219,20 +219,20 @@ class GDELTLoader:
             num_articles=articles,
             source_url=source_url,
             source_domain=source_domain,
-            action_geo_name=str(row.get("ActionGeo_FullName", "") or ""),
+            action_geo_name=str(getattr(row, "ActionGeo_FullName", "") or ""),
         )
 
 
-def _parse_gdelt_date(row: pd.Series) -> date | None:
-    """Parse event date from GDELT row."""
-    dateadded = str(row.get("DATEADDED", ""))
+def _parse_gdelt_date(row) -> date | None:
+    """Parse event date from a GDELT row (named tuple or Series)."""
+    dateadded = str(getattr(row, "DATEADDED", "") or "")
     if dateadded and len(dateadded) >= 8:
         try:
             return datetime.strptime(dateadded[:8], "%Y%m%d").date()
         except ValueError:
             pass
 
-    day_str = str(row.get("Day", ""))
+    day_str = str(getattr(row, "Day", "") or "")
     if day_str and len(day_str) == 8:
         try:
             return datetime.strptime(day_str, "%Y%m%d").date()

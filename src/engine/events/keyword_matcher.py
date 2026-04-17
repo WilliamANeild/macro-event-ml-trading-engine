@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -36,7 +39,16 @@ class KeywordMatcher:
         if themes is not None:
             self._themes = themes
         else:
-            self._themes = _load_taxonomy_from_markdown()
+            try:
+                self._themes = _load_taxonomy_from_markdown()
+            except (FileNotFoundError, OSError) as exc:
+                logger.warning(
+                    "Could not load taxonomy file (%s); "
+                    "initializing with empty theme list. "
+                    "KeywordMatcher will return no matches until themes are provided.",
+                    exc,
+                )
+                self._themes = []
 
     def match(self, text: str) -> list[ThemeMatch]:
         """Match text against all themes and return up to MAX_MATCHES results.

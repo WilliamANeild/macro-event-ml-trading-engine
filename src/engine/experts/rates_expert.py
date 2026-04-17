@@ -86,7 +86,7 @@ class RatesPolicyExpert(BaseExpert):
         confidence = min(
             1.0,
             0.3 + 0.3 * abs(cb_language_shift)
-            + 0.2 * (hawkish_shock_flag + easing_shock_flag),
+            + 0.2 * (hawkish_shock_flag + easing_shock_flag)
             + 0.2 * abs(yield_change) * 10,  # Higher yield moves = more confident
         )
         
@@ -139,7 +139,7 @@ class RatesPolicyExpert(BaseExpert):
         probability_active = min(
             1.0,
             0.3 * (hawkish_shock_flag + easing_shock_flag)
-            + 0.4 * min(1.0, abs(yield_change) * 50),  # Normalize: 2bp = 0.1
+            + 0.4 * min(1.0, abs(yield_change) * 50)  # Normalize: 2bp = 0.1
             + 0.3 * cb_language_intensity,
         )
         

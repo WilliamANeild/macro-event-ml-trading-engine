@@ -54,6 +54,32 @@ def compute_turnover(weight_history: list[dict[str, float]]) -> float:
     return total / (len(weight_history) - 1)
 
 
+def compute_information_ratio(
+    strategy_returns: list[float], benchmark_returns: list[float]
+) -> float:
+    if len(strategy_returns) < 2 or len(benchmark_returns) < 2:
+        return 0.0
+    excess = np.array(strategy_returns) - np.array(benchmark_returns)
+    te = float(np.std(excess, ddof=1))
+    if te < 1e-10:
+        return 0.0
+    return float(np.mean(excess) / te * np.sqrt(252))
+
+
+def compute_sortino(returns: list[float], risk_free: float = 0.0) -> float:
+    if len(returns) < 2:
+        return 0.0
+    r = np.array(returns)
+    excess = r - risk_free / 252
+    downside = excess[excess < 0]
+    if len(downside) < 1:
+        return 0.0
+    down_std = float(np.std(downside, ddof=1))
+    if down_std < 1e-10:
+        return 0.0
+    return float(np.mean(excess) / down_std * np.sqrt(252))
+
+
 def compute_hit_rate(returns: list[float]) -> float:
     if not returns:
         return 0.0

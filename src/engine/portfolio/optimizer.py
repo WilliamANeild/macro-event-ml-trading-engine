@@ -93,7 +93,6 @@ class PortfolioOptimizer:
 
         # Build weights dict
         weights = {sym: round(float(opt_w[i]), 6) for i, sym in enumerate(available)}
-        self._prev_weights = dict(weights)
 
         # Hedges
         hedge_weights = self.hedge_manager.compute_hedges(
@@ -102,10 +101,12 @@ class PortfolioOptimizer:
 
         gross = sum(abs(v) for v in weights.values())
         net = sum(weights.values())
+        old_weights = dict(self._prev_weights)
         turnover = sum(
-            abs(weights.get(s, 0) - self._prev_weights.get(s, 0))
-            for s in set(list(weights.keys()) + list(self._prev_weights.keys()))
+            abs(weights.get(s, 0) - old_weights.get(s, 0))
+            for s in set(list(weights.keys()) + list(old_weights.keys()))
         )
+        self._prev_weights = dict(weights)
 
         return PortfolioTarget(
             as_of_date=decision.as_of_date,

@@ -179,7 +179,7 @@ def run_live() -> None:
 
     print("stage 1: load live market data (Yahoo Finance)")
     yahoo = YahooDataSource()
-    returns = yahoo.load_returns(symbols, start="2023-01-01")
+    returns = yahoo.load_returns(symbols, start_date="2023-01-01")
     print(f"loaded {len(returns)} days of returns for {list(returns.columns)}")
 
     # Use latest returns for features

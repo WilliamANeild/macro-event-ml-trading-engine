@@ -51,6 +51,9 @@ class CryptoRegimeExpert(BaseExpert):
         risk_on_signal = features.get("risk_on_signal", 0.5)
         risk_off_signal = features.get("risk_off_signal", 0.5)
         
+        # Default regime before branching (model path may not set it)
+        regime = "neutral"
+
         # Use model if fitted
         if self._fitted and self.model is not None:
             try:

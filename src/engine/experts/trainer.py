@@ -7,19 +7,20 @@ import pandas as pd
 
 from .base import BaseExpert
 from .schemas import ExpertContext, ExpertPrediction
+from ..meta.walk_forward import WalkForwardSplitter
 
 
 class ExpertTrainer:
     """
     Walk-forward training framework for experts with anti-leakage protocol.
-    
+
     Ensures:
     - Rolling walk-forward training only (no random shuffles)
     - Expert predictions are out-of-sample for combiner training
     - No feature aggregation that peeks into the future
     - Each expert trained independently per fold
     """
-    
+
     def __init__(
         self,
         min_train: int = 60,
@@ -29,47 +30,47 @@ class ExpertTrainer:
     ) -> None:
         """
         Initialize trainer with walk-forward parameters.
-        
+
         Args:
             min_train: Minimum training window size
             test_size: Test/validation window size
             gap: Gap between train and test (prevents lookahead)
             expanding: If True, training window expands. If False, uses rolling window.
         """
-        self.min_train = min_train
-        self.test_size = test_size
-        self.gap = gap
-        self.expanding = expanding
-    
+        self._splitter = WalkForwardSplitter(
+            min_train=min_train,
+            test_size=test_size,
+            gap=gap,
+            expanding=expanding,
+        )
+
+    @property
+    def min_train(self) -> int:
+        return self._splitter.min_train
+
+    @property
+    def test_size(self) -> int:
+        return self._splitter.test_size
+
+    @property
+    def gap(self) -> int:
+        return self._splitter.gap
+
+    @property
+    def expanding(self) -> bool:
+        return self._splitter.expanding
+
     def walk_forward_splits(self, n_samples: int) -> list[tuple[np.ndarray, np.ndarray]]:
         """
         Generate walk-forward train/test splits.
-        
+
         Args:
             n_samples: Total number of samples.
-            
+
         Returns:
             List of (train_indices, test_indices) tuples with proper gap.
         """
-        splits: list[tuple[np.ndarray, np.ndarray]] = []
-        indices = np.arange(n_samples)
-        start = 0
-        train_end = self.min_train
-        
-        while train_end + self.gap + self.test_size <= n_samples:
-            test_start = train_end + self.gap
-            test_end = test_start + self.test_size
-            
-            if self.expanding:
-                train_idx = indices[start:train_end]
-            else:
-                train_idx = indices[max(0, train_end - self.min_train) : train_end]
-            
-            test_idx = indices[test_start:test_end]
-            splits.append((train_idx, test_idx))
-            train_end += self.test_size
-        
-        return splits
+        return self._splitter.split(n_samples)
     
     def train_expert(
         self,

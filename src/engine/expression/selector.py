@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
+
 from src.engine.meta.schemas import MetaSignal
-from src.engine.universe.registry import get_universe_by_sleeve
+from src.engine.universe.registry import get_universe, get_universe_by_sleeve
 from src.engine.universe.schemas import Instrument
 
 from .ml_selector import MLExpressionSelector  # noqa: F401
 from .schemas import ExpressionDecision
+
+logger = logging.getLogger(__name__)
 
 
 class ExpressionSelector:
@@ -55,15 +59,39 @@ class ExpressionSelector:
                 regime=signal.regime,
             )
 
-        # Fallback if no instruments found for theme
-        fallback = signal.theme.upper()[:3]
+        # Fallback: no instruments found for this theme in the universe.
+        # Try to find a core ETF from any sleeve that partially matches,
+        # otherwise default to SPY as the safest broad-market proxy.
+        logger.warning(
+            "No instruments found for theme '%s'; searching for fallback ETF",
+            signal.theme,
+        )
+        fallback_symbol = "SPY"
+        all_instruments = get_universe()
+        # Look for a core instrument whose tags or theme partially match
+        for inst in all_instruments:
+            if inst.role != "core":
+                continue
+            theme_lower = signal.theme.lower()
+            if theme_lower in inst.theme.lower() or (
+                hasattr(inst, "tags") and any(theme_lower in t for t in inst.tags)
+            ):
+                fallback_symbol = inst.symbol
+                break
+
+        if fallback_symbol == "SPY":
+            logger.warning(
+                "No matching sleeve found for theme '%s'; defaulting to SPY",
+                signal.theme,
+            )
+
         return ExpressionDecision(
             as_of_date=signal.as_of_date,
             theme=signal.theme,
             subtheme=signal.subtheme,
             expression_type="etf",
-            target_symbols=[fallback],
-            weights={fallback: 1.0},
+            target_symbols=[fallback_symbol],
+            weights={fallback_symbol: 1.0},
             confidence=signal.confidence,
             regime=signal.regime,
         )

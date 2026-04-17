@@ -91,6 +91,14 @@ class SyntheticDataGenerator(BaseDataSource):
 
         return self._prices
 
+    def load_returns(
+        self,
+        symbols: list[str] | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> pd.DataFrame:
+        return self.get_returns()
+
     def get_returns(self) -> pd.DataFrame:
         if self._returns_df is None:
             self.load_prices()

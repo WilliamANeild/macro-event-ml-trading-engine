@@ -11,21 +11,33 @@ from .unwind import UnwindManager
 
 
 class DerivativesOverlayManager:
-    def __init__(self, nav: float = 1.0) -> None:
+    def __init__(
+        self, nav: float = 1.0, budget_reset_interval: int | None = None
+    ) -> None:
         self.activation = OverlayActivationRule()
         self.structure_selector = StructureSelector()
         self.budget_manager = PremiumBudgetManager()
         self.unwind_manager = UnwindManager()
         self.nav = nav
+        self.budget_reset_interval = budget_reset_interval
         self._prev_direction: str = ""
         self._days_held: int = 0
         self._active: bool = False
+        self._period_count: int = 0
 
     def build_overlay(
         self,
         signal: MetaSignal,
         portfolio: PortfolioTarget,
     ) -> DerivativesOverlay:
+        # Periodic budget reset
+        self._period_count += 1
+        if (
+            self.budget_reset_interval is not None
+            and self._period_count % self.budget_reset_interval == 0
+        ):
+            self.budget_manager.reset()
+
         # Check unwind conditions for active overlay
         if self._active:
             should_unwind, unwind_reason = self.unwind_manager.should_unwind(
@@ -39,6 +51,7 @@ class DerivativesOverlayManager:
                 fraction = self.unwind_manager.partial_unwind_fraction(
                     signal.confidence, self._days_held
                 )
+                held = self._days_held
                 self._active = False
                 self._days_held = 0
                 return DerivativesOverlay(
@@ -48,7 +61,7 @@ class DerivativesOverlayManager:
                     notionals={},
                     premium_budget_used=0.0,
                     structure="unwind",
-                    days_held=self._days_held,
+                    days_held=held,
                     unwind_fraction=fraction,
                     activation_reason=unwind_reason,
                 )
