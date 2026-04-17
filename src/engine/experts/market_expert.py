@@ -71,7 +71,7 @@ class MarketPricingExpert(BaseExpert):
                     severity = float(np.clip(values[0] if values is not None else realized_volatility, 0, 1))
                 else:
                     probability_active, severity = self._heuristic_predict(
-                        realized_volatility, vol_of_vol, already_priced_indicator
+                        realized_volatility, vol_of_vol, already_priced_indicator, features
                     )
             except Exception:
                 probability_active, severity = self._heuristic_predict(
@@ -79,14 +79,17 @@ class MarketPricingExpert(BaseExpert):
                 )
         else:
             probability_active, severity = self._heuristic_predict(
-                realized_volatility, vol_of_vol, already_priced_indicator
+                realized_volatility, vol_of_vol, already_priced_indicator, features
             )
         
-        # Confidence: high vol consistency + correlation coherence
+        # Confidence: high vol consistency + correlation coherence + VIX fallback
+        vix = features.get("vix_close_w", 0.0)
+        vix_conf = max(0.0, min(1.0, (vix - 14.0) / 25.0)) if vix > 0 else 0.0
+        rvol_or_vix = max(realized_volatility, vix_conf)
         confidence = min(
             1.0,
-            0.2 + 0.3 * realized_volatility
-            + 0.3 * vol_of_vol
+            0.2 + 0.3 * rvol_or_vix
+            + 0.3 * max(vol_of_vol, vix_conf * 0.5)
             + 0.2 * cross_asset_correlation_spike,
         )
         
@@ -143,16 +146,33 @@ class MarketPricingExpert(BaseExpert):
         realized_volatility: float,
         vol_of_vol: float,
         already_priced_indicator: float,
+        features: dict,
     ) -> tuple[float, float]:
         """Fallback heuristic when model not fitted."""
+        # If realized_volatility is 0 (SPY not in universe), fall back to VIX
+        rvol = realized_volatility
+        vov = vol_of_vol
+        if rvol < 0.01:
+            vix = features.get("vix_close_w", 0.0)
+            # Map VIX to 0-1: VIX 12=0.1, 20=0.33, 35=0.67, 50+=1.0
+            rvol = max(0.0, min(1.0, (vix - 10.0) / 40.0)) if vix > 0 else 0.0
+            # Also scan for any available symbol rvol
+            for key, val in features.items():
+                if key.endswith("_rvol_20d") and isinstance(val, (int, float)) and val > 0:
+                    candidate = min(1.0, val / 0.60)
+                    rvol = max(rvol, candidate)
+                    break
+            # Estimate vol_of_vol from VIX level deviation
+            if vix > 0:
+                vov = max(0.0, min(1.0, (vix - 18.0) / 20.0))
+
         # Vol spikes without regime change = repricing risk
-        # Vol of vol high + already_priced = dampened signal
         repricing_risk = min(
             1.0,
-            0.5 * realized_volatility + 0.4 * vol_of_vol + 0.1 * (1.0 - already_priced_indicator),
+            0.5 * rvol + 0.4 * vov + 0.1 * (1.0 - already_priced_indicator),
         )
-        
+
         probability_active = repricing_risk * (1.0 - already_priced_indicator * 0.5)
-        severity = realized_volatility
-        
+        severity = rvol
+
         return probability_active, severity

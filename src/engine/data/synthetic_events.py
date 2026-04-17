@@ -36,17 +36,55 @@ class SyntheticEventGenerator:
             base_noise = self.rng.normal(0, 0.02)
             intensity = max(0.0, intensity + base_noise)
 
+            # Base event features
+            values: dict[str, float] = {
+                "event_intensity": round(intensity, 4),
+                "event_novelty": round(novelty, 4),
+                "event_decay": round(np.exp(-decay_rate), 4),
+            }
+
+            # Map event intensity to expert-expected keys based on theme
+            theme = active_theme if intensity > 0.05 else "none"
+            if theme == "energy":
+                # Conflict expert keys
+                values["escalation_intensity"] = round(intensity * 0.85, 4)
+                values["escalation_acceleration"] = round(
+                    novelty * 0.6 * (1.0 if intensity > 0.3 else 0.3), 4
+                )
+                values["sanctions_mentions"] = round(intensity * 3.0, 1)
+                values["sanctions_direction"] = round(
+                    0.5 + 0.4 * intensity, 4
+                )  # tightening bias during energy events
+                values["spillover_flag"] = round(
+                    min(1.0, intensity * 1.2), 4
+                )
+            elif theme == "shipping":
+                # Shipping expert keys
+                values["chokepoint_intensity"] = round(intensity * 0.9, 4)
+                values["incident_count"] = round(intensity * 5.0, 1)
+                values["incident_novelty"] = round(novelty, 4)
+                values["port_stress"] = round(intensity * 0.6, 4)
+                values["energy_move"] = round(intensity * 0.4, 4)
+                values["freight_proxy_move"] = round(intensity * 0.5, 4)
+            elif theme == "defense":
+                # Conflict expert keys (defense events also drive conflict)
+                values["escalation_intensity"] = round(intensity * 0.7, 4)
+                values["escalation_acceleration"] = round(
+                    novelty * 0.5, 4
+                )
+                values["sanctions_mentions"] = round(intensity * 2.0, 1)
+                values["sanctions_direction"] = round(
+                    0.5 + 0.3 * intensity, 4
+                )
+                values["spillover_flag"] = round(intensity * 0.5, 4)
+
             rows.append(
                 EventFeatureRow(
                     as_of_date=current_date,
-                    theme=active_theme if intensity > 0.05 else "none",
+                    theme=theme,
                     subtheme="synthetic",
                     region="global",
-                    values={
-                        "event_intensity": round(intensity, 4),
-                        "event_novelty": round(novelty, 4),
-                        "event_decay": round(np.exp(-decay_rate), 4),
-                    },
+                    values=values,
                     metadata={"source": "synthetic"},
                 )
             )

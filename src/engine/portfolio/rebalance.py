@@ -6,11 +6,11 @@ from dataclasses import dataclass, field
 STATES = ["IDLE", "IMPULSE_ONSET", "ACTIVE", "DECAY", "UNWIND"]
 
 STATE_MULTIPLIER = {
-    "IDLE": 0.0,
-    "IMPULSE_ONSET": 0.5,
+    "IDLE": 0.95,
+    "IMPULSE_ONSET": 0.85,
     "ACTIVE": 1.0,
-    "DECAY": 0.6,
-    "UNWIND": 0.2,
+    "DECAY": 0.8,
+    "UNWIND": 0.4,
 }
 
 # score thresholds for state transitions

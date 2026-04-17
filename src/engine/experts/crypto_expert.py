@@ -72,7 +72,8 @@ class CryptoRegimeExpert(BaseExpert):
                     severity = float(np.clip(values[0] if values is not None else crypto_volatility, 0, 1))
                 else:
                     probability_active, severity, regime = self._heuristic_predict(
-                        crypto_volatility, crypto_equity_correlation, risk_on_signal, risk_off_signal
+                        crypto_volatility, crypto_equity_correlation, risk_on_signal,
+                        risk_off_signal, usd_strength, liquidity_stress, features,
                     )
             except Exception:
                 probability_active, severity, regime = self._heuristic_predict(
@@ -80,7 +81,8 @@ class CryptoRegimeExpert(BaseExpert):
                 )
         else:
             probability_active, severity, regime = self._heuristic_predict(
-                crypto_volatility, crypto_equity_correlation, risk_on_signal, risk_off_signal
+                crypto_volatility, crypto_equity_correlation, risk_on_signal,
+                risk_off_signal, usd_strength, liquidity_stress, features,
             )
         
         # Confidence increases with regime consistency
@@ -142,21 +144,45 @@ class CryptoRegimeExpert(BaseExpert):
         crypto_equity_correlation: float,
         risk_on_signal: float,
         risk_off_signal: float,
+        usd_strength: float,
+        liquidity_stress: float,
+        features: dict,
     ) -> tuple[float, float, str]:
         """Fallback heuristic when model not fitted."""
-        
-        # Determine regime: high equity corr + risk-on = risk-on behavior
-        # Low/negative equity corr + risk-off = stress hedge
-        if crypto_equity_correlation > 0.6 and risk_on_signal > 0.6:
+        cvol = crypto_volatility
+
+        # If crypto_volatility is 0 (BTC-USD not in universe), derive from
+        # VIX and risk signals as a proxy for crypto regime stress.
+        if cvol < 0.01:
+            vix = features.get("vix_close_w", 0.0)
+            # Elevated VIX implies crypto vol is likely elevated too
+            cvol = max(0.0, min(1.0, (vix - 14.0) / 30.0)) if vix > 0 else 0.0
+            # Also use the absolute deviation of risk signals from neutral
+            risk_divergence = abs(risk_on_signal - risk_off_signal)
+            cvol = max(cvol, risk_divergence * 0.6)
+
+        # Determine regime using relaxed thresholds
+        risk_spread = risk_on_signal - risk_off_signal
+        if crypto_equity_correlation > 0.55 and risk_on_signal > 0.52:
             regime = "risk_on"
-            probability_active = min(1.0, 0.6 + 0.2 * crypto_volatility)
-        elif crypto_equity_correlation < 0.3 and risk_off_signal > 0.6:
+            probability_active = min(1.0, 0.50 + 0.25 * cvol + 0.15 * risk_on_signal)
+        elif crypto_equity_correlation < 0.35 and risk_off_signal > 0.52:
             regime = "stress_hedge"
-            probability_active = min(1.0, 0.5 + 0.2 * crypto_volatility)
+            probability_active = min(1.0, 0.45 + 0.25 * cvol + 0.15 * risk_off_signal)
+        elif abs(risk_spread) > 0.1:
+            # Clear directional risk signal even without extreme correlation
+            regime = "risk_on" if risk_spread > 0 else "stress_hedge"
+            probability_active = min(1.0, 0.35 + 0.25 * cvol + 0.2 * abs(risk_spread))
         else:
             regime = "neutral"
-            probability_active = 0.3 + 0.2 * crypto_volatility
-        
-        severity = crypto_volatility
-        
+            # Still produce a non-trivial signal from USD strength and liquidity
+            probability_active = min(
+                1.0,
+                0.25 + 0.20 * cvol
+                + 0.15 * abs(usd_strength - 0.5) * 2  # deviation from neutral
+                + 0.10 * liquidity_stress,
+            )
+
+        severity = cvol
+
         return probability_active, severity, regime

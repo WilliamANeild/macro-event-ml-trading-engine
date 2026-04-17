@@ -21,7 +21,9 @@ from src.engine.events.schemas import EventFeatureRow
 from src.engine.experts.registry import get_experts
 from src.engine.experts.schemas import ExpertContext
 from src.engine.expression.ml_selector import MLExpressionSelector
+from src.engine.features.builder import FeatureBuilder
 from src.engine.features.schemas import FeatureRow
+from src.engine.meta.regime_detector import RegimeDetector
 from src.engine.meta.stacker import MetaStacker
 from src.engine.portfolio.optimizer import PortfolioOptimizer
 from src.engine.universe.registry import get_universe
@@ -34,7 +36,7 @@ class WalkForwardBacktester:
     def __init__(
         self,
         data_gen: SyntheticDataGenerator | None = None,
-        rebalance_freq: int = 5,
+        rebalance_freq: int = 10,
         retrain_interval: int | None = None,
     ) -> None:
         self.data_gen = data_gen or SyntheticDataGenerator()
@@ -46,24 +48,56 @@ class WalkForwardBacktester:
         returns: pd.DataFrame | None = None,
         feature_history: list[FeatureRow] | None = None,
         event_history: list[EventFeatureRow] | None = None,
+        prices_df: pd.DataFrame | None = None,
+        macro_df: pd.DataFrame | None = None,
     ) -> BacktestResult:
         # Generate data if not provided
         self.data_gen.load_prices()
         if returns is None:
             returns = self.data_gen.get_returns()
+
+        # Build prices and macro DataFrames for FeatureBuilder
+        if prices_df is None:
+            prices_df = self.data_gen.get_prices_df()
+        if macro_df is None:
+            macro_df = self.data_gen.get_macro_df()
+        feature_builder = FeatureBuilder()
+
+        # Pre-build feature history using FeatureBuilder with rolling windows
         if feature_history is None:
-            feature_history = self.data_gen.generate_feature_history()
+            feature_history = []
+            for i in range(20, len(returns)):
+                dt = returns.index[i].date()
+                # Only build features on rebalance dates to avoid unnecessary work
+                if i % self.rebalance_freq != 0:
+                    continue
+                feat = feature_builder.build(
+                    as_of_date=dt,
+                    theme="macro",
+                    subtheme="all",
+                    prices=prices_df.iloc[: i + 1],
+                    returns=returns.iloc[: i + 1],
+                    macro=macro_df.iloc[: i + 1],
+                )
+                feature_history.append(feat)
+
         if event_history is None:
             evt_gen = SyntheticEventGenerator(self.data_gen.event_manifest)
             dates = self.data_gen.get_dates()
             event_history = evt_gen.generate(dates[0], len(dates))
 
-        # Setup components
-        universe = get_universe()
+        # Setup components — filter universe to tradeable symbols only
+        full_universe = get_universe()
+        tradeable = set(returns.columns)
+        universe = [inst for inst in full_universe if inst.symbol in tradeable]
         symbols = [inst.symbol for inst in universe]
         experts = get_experts()
-        stacker = MetaStacker()
+        regime_det = RegimeDetector()
+        regime_det.fit(returns)
+        stacker = MetaStacker(regime_detector=regime_det)
+        stacker.set_recent_returns(returns)
         selector = MLExpressionSelector(universe=universe)
+        selector.set_recent_returns(returns)
         optimizer = PortfolioOptimizer(returns=returns, universe=universe)
         overlay_mgr = DerivativesOverlayManager()
         attribution = AttributionEngine()
@@ -140,11 +174,18 @@ class WalkForwardBacktester:
                 and rebalance_count % self.retrain_interval == 0
             ):
                 experts = get_experts()
-                stacker = MetaStacker()
+                regime_det = RegimeDetector()
+                regime_det.fit(returns.iloc[:i])
+                stacker = MetaStacker(regime_detector=regime_det)
+                stacker.set_recent_returns(returns.iloc[:i])
                 selector = MLExpressionSelector(universe=universe)
                 optimizer = PortfolioOptimizer(
                     returns=returns.iloc[:i], universe=universe
                 )
+
+            # Update regime detector and momentum with latest returns window
+            stacker.set_recent_returns(returns.iloc[: i + 1])
+            selector.set_recent_returns(returns.iloc[: i + 1])
 
             # Get features
             feat = feature_dates.get(dt)
@@ -152,13 +193,17 @@ class WalkForwardBacktester:
             if feat is None:
                 continue
 
-            # Run pipeline
+            # Run pipeline – merge event features into feature_row so experts
+            # can access event-driven keys (escalation_intensity, etc.) via
+            # context.feature_row.get(...)
+            evt_values = evt.values if evt else {}
+            merged_features = {**feat.values, **evt_values}
             context = ExpertContext(
                 as_of_date=dt,
-                theme="macro",
+                theme=evt.theme if evt and evt.theme != "none" else "macro",
                 subtheme="all",
-                feature_row=feat.values,
-                event_features=evt.values if evt else {},
+                feature_row=merged_features,
+                event_features=evt_values,
                 universe=symbols,
             )
 
@@ -178,6 +223,22 @@ class WalkForwardBacktester:
                 abs(portfolio.weights.get(s, 0) - current_weights.get(s, 0))
                 for s in all_syms
             )
+
+            # Skip rebalance if portfolio barely changed — check both
+            # raw turnover and directional similarity
+            if current_weights and turnover < 0.08:
+                # Cosine similarity between old and new weight vectors
+                all_s = sorted(all_syms)
+                old_vec = np.array([current_weights.get(s, 0) for s in all_s])
+                new_vec = np.array([portfolio.weights.get(s, 0) for s in all_s])
+                dot = float(old_vec @ new_vec)
+                norms = float(np.linalg.norm(old_vec) * np.linalg.norm(new_vec))
+                cos_sim = dot / norms if norms > 1e-10 else 0.0
+                # Skip if portfolios are very similar (same direction, similar weights)
+                if cos_sim > 0.85:
+                    overlay_mgr.tick_day()
+                    continue
+
             cost = turnover * COST_BPS / 10000
             costs.append(cost)
             equity -= cost

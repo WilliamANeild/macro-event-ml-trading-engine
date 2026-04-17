@@ -52,10 +52,10 @@ class RegimeDetector:
         vol_z = (vol - self._vol_mean) / self._vol_std
         mom_z = (mom - self._mom_mean) / self._mom_std
 
-        if vol_z > 1.5 and mom_z < -1.0:
+        if vol_z > 1.0 and mom_z < -0.7:
             return "crisis"
-        if mom_z > 1.5 and vol_z < 0.5:
+        if mom_z > 1.0 and vol_z < 0.5:
             return "euphoria"
-        if abs(vol_z) > 1.0 or abs(mom_z) > 1.0:
+        if abs(vol_z) > 0.7 or abs(mom_z) > 0.7:
             return "transition"
         return "normal"

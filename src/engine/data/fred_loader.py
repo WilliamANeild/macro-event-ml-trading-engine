@@ -8,20 +8,22 @@ import pandas as pd
 from .cache import CacheManager
 
 DEFAULT_SERIES = {
-    "VIXCLS": "VIX",
-    "DGS10": "10Y_yield",
-    "DCOILWTICO": "oil_price",
-    "DTWEXBGS": "usd_index",
-    "T5YIE": "breakeven_inflation",
-    "T10YIE": "breakeven_inflation_10y",
-    "T10Y2Y": "curve_slope_10y2y",
-    "T10Y3M": "curve_slope_10y3m",
-    "DFF": "fed_funds_rate",
+    "VIXCLS": "vix_close",
+    "DGS2": "yield_2y",
+    "DGS5": "yield_5y",
+    "DGS10": "yield_10y",
+    "DCOILWTICO": "oil_wti",
+    "DTWEXBGS": "usd_broad",
+    "T5YIE": "breakeven_5y",
+    "T10YIE": "breakeven_10y",
+    "T10Y2Y": "curve_10y2y",
+    "T10Y3M": "curve_10y3m",
+    "DFF": "fed_funds",
     "DFII10": "real_rate_10y",
-    "T5YIFR": "forward_inflation_5y",
-    "BAMLH0A0HYM2": "hy_credit_spread",
-    "BAMLC0A0CM": "ig_credit_spread",
-    "DCOILBRENTEU": "brent_price",
+    "T5YIFR": "fwd_inflation_5y5y",
+    "BAMLH0A0HYM2": "hy_oas",
+    "BAMLC0A0CM": "ig_oas",
+    "DCOILBRENTEU": "oil_brent",
 }
 
 

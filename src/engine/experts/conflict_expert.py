@@ -69,23 +69,29 @@ class ConflictEscalationExpert(BaseExpert):
                     severity = float(np.clip(values[0] if values is not None else escalation_intensity, 0, 1))
                 else:
                     probability_active, severity = self._heuristic_predict(
-                        escalation_intensity, escalation_acceleration, sanctions_direction, spillover_flag
+                        escalation_intensity, escalation_acceleration,
+                        sanctions_direction, spillover_flag, features,
                     )
             except Exception:
                 probability_active, severity = self._heuristic_predict(
-                    escalation_intensity, escalation_acceleration, sanctions_direction, spillover_flag
+                    escalation_intensity, escalation_acceleration,
+                    sanctions_direction, spillover_flag, features,
                 )
         else:
             probability_active, severity = self._heuristic_predict(
-                escalation_intensity, escalation_acceleration, sanctions_direction, spillover_flag
+                escalation_intensity, escalation_acceleration,
+                sanctions_direction, spillover_flag, features,
             )
         
-        # Confidence depends on escalation acceleration (trending) and spillover confirmation
+        # Confidence depends on escalation acceleration and market confirmation
+        vix = features.get("vix_close_w", 0.0)
+        vix_conf = max(0.0, min(1.0, (vix - 15.0) / 20.0)) if vix > 0 else 0.0
         confidence = min(
             1.0,
             0.3
-            + 0.4 * abs(escalation_acceleration)  # Trending = higher confidence
-            + 0.3 * spillover_flag,  # Multi-indicator confirmation = higher confidence
+            + 0.25 * abs(escalation_acceleration)  # Trending = higher confidence
+            + 0.20 * spillover_flag  # Multi-indicator confirmation
+            + 0.25 * vix_conf,  # Market stress confirmation
         )
         
         # Direction: long on escalation
@@ -128,21 +134,51 @@ class ConflictEscalationExpert(BaseExpert):
         escalation_acceleration: float,
         sanctions_direction: float,
         spillover_flag: float,
+        features: dict,
     ) -> tuple[float, float]:
         """Fallback heuristic when model not fitted."""
-        # Weighted combination of signals
-        probability_active = min(
-            1.0,
+        # Event-based signal (will be 0 when event pipeline not active)
+        event_signal = (
             0.4 * escalation_intensity
-            + 0.3 * max(0.0, escalation_acceleration)  # Only positive acceleration counts
-            + 0.2 * (1.0 - sanctions_direction) * 0.5,  # Sanctions context
+            + 0.3 * max(0.0, escalation_acceleration)
+            + 0.2 * (1.0 - sanctions_direction) * 0.5
         )
-        
+
+        # Market-based conflict proxy: VIX spike + equity drawdown + oil move
+        # suggest geopolitical stress even without event data
+        vix = features.get("vix_close_w", 0.0)
+        vix_signal = max(0.0, min(1.0, (vix - 16.0) / 20.0))  # 16=0, 36=1
+
+        # Drawdown across available symbols
+        max_drawdown = 0.0
+        for key, val in features.items():
+            if key.endswith("_drawdown") and isinstance(val, (int, float)):
+                max_drawdown = max(max_drawdown, abs(val))
+        dd_signal = min(1.0, max_drawdown / 0.10)  # 10% drawdown -> 1.0
+
+        # Oil spike as conflict proxy
+        oil_ret = abs(features.get("oil_wti_ret_1w", 0.0))
+        oil_signal = min(1.0, oil_ret / 0.05)  # 5% weekly oil move -> 1.0
+
+        # Region vol from bridge (EEM rvol)
+        region_vol = features.get("region_volatility", 0.0)
+
+        # Combine: use event signal if available, otherwise market proxy
+        market_signal = (
+            0.35 * vix_signal
+            + 0.25 * dd_signal
+            + 0.25 * oil_signal
+            + 0.15 * region_vol
+        )
+
+        probability_active = min(1.0, max(event_signal, market_signal))
+
         severity = min(
             1.0,
-            escalation_intensity
-            + 0.2 * spillover_flag
-            + 0.1 * max(0.0, escalation_acceleration),
+            max(
+                escalation_intensity + 0.2 * spillover_flag,
+                0.5 * vix_signal + 0.3 * dd_signal + 0.2 * oil_signal,
+            ),
         )
-        
+
         return probability_active, severity

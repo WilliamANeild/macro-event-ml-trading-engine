@@ -1,438 +1,3 @@
-'''from __future__ import annotations
-
-import math
-from pandas import pd
-from datetime import date
-
-from .schemas import FeatureRow
-
-
-
-_WEEK = 5  # trading days in a week
-class FeatureBuilder:
-    def build(
-        self,
-        as_of_date: date,
-        theme: str,
-        subtheme: str,
-        prices: pd.DataFrame,        # daily closes, index=date, columns=symbols
-        returns: pd.DataFrame,       # daily returns, index=date, columns=symbols
-        macro: pd.DataFrame,         # daily macro, index=date, columns=series names
-) -> FeatureRow:
-        values: dict[str, float] = {}
-        n_days = min(len(s) for s in prices.values())
-        n_weeks = n_days // _WEEK
-
-        rows: dict[int, dict[str, float]] = {}  # week_index → feature dict
-
-        for w in range(n_weeks):
-            week_values: dict[str, float] = {}
-            sliced = {sym: series[: (w + 1) * _WEEK] for sym, series in prices.items()}
-
-            for symbol, series in sliced.items():
-                self.returns(returns)
-                self.volatility(returns)
-                self.drawdown(prices)
-                self.cross_asset_corr(returns)
-                self.dispersion(returns, registry)
-                self.macro_features(macro)
-                self.dynamics(values)
-
-            week_values.update(self.cross_asset(sliced))
-            rows[w] = week_values
-
-        # Most recent week is the canonical FeatureRow returned to callers
-        latest = rows.get(n_weeks - 1, {})
-        return FeatureRow(
-            as_of_date=as_of_date,
-            theme=theme,
-            subtheme=subtheme,
-            values=latest,
-        )
-    def weekly(daily: list[float]) -> list[float]:
-    # Take every 5th close starting from index 4 (end of first week)
-        return daily[4::5]
-    
-    @staticmethod
-    def returns(symbol: str, series: list[float]) -> dict[str, float]:
-        values: dict[str, float] = {}
-
-        weekly_prices = FeatureBuilder.weekly(series)
-        n = len(weekly_prices)
-
-        if n < 2:
-            return values
-
-        for label, window in _RETURN_WINDOWS.items():
-            if n >= window + 1:
-                values[f"{symbol}_return_{label}"] = (
-                    weekly_prices[-1] / weekly_prices[-(window + 1)]
-                ) - 1.0
-            else:
-                values[f"{symbol}_return_{label}"] = float("nan")
-
-        return values
-        
-
-    def returns(symbol: str, series: list[float]) -> dict[str, float]:
-        values: dict[str, float] = {}
-
-        weekly_prices = FeatureBuilder.weekly(series)
-        n = len(weekly_prices)
-
-        if n < 2:
-            return values
-
-        # w1 = most recent week's return, w2 = prior week, etc.
-        for week in range(1, n):
-            values[f"{symbol}_return_w{week}"] = (
-                weekly_prices[n - week] / weekly_prices[n - week - 1]
-            ) - 1.0
-
-        return values
-
-        
-         for label, week in return_windows.items():
-            key = f"{symbol}_return_{label}"
-            if n >= week + 1:
-                values[key] = (series[-1] / series[-(week + 1)]) - 1.0
-            else:
-                values[key] = float("nan")
-    
-        return values
-    def volatility(symbol: str, series: list[float]) -> dict[str, float]:
-        values: dict[str, float] = {}
-        n = len(series)
-        n_weeks = n // _WEEK
-
-        if n_weeks == 0:
-            return values
-        for week in range(1, n_weeks + 1):
-            week_end = n_weeks * _WEEK - (week - 1) * _WEEK  # exclusive
-            week_prices = series[week_end - _WEEK : week_end]
-            values[f"{symbol}_vol_w{week}"] = (FeatureBuilder.std(week_prices) * math.sqrt(252))
-
-            vol_4w = series[week - 3*_WEEK : week: _WEEK]
-            values[f"{symbol}_volvol_w{week}"] = FeatureBuilder.std(vol_4w)
-    
-        return values
-    
-    #vol of vol over 1 month or 4 weeks
-    def vol_of_vol(symbol: str, series: list[float]) -> dict[str, float]:
-        values: dict[str, float] = {}
-        vol = FeatureBuilder.volatility(series) 
-        #n_weeks = n // _WEEK
-
-        if len(vol) < 4:
-            return values
-        
-        else:
-            for week in range(4, len(vol) + 1):
-                vol_4w = vol[week - 3 *_WEEK : week: _WEEK]
-                values[f"{symbol}_volvol_w{week}"] = self.std(vol_4w)
-        
-            return values
-
- 
- 
-
- 
-    def drawdown(symbol: str, series: list[float]) -> dict[str, float]:
-        values: dict[str, float] = {}
-        n = len(series)
-        
-        n_weeks = n // _WEEK
-
-        if n_weeks == 0:
-            return values
-        for week in range(1, n_weeks + 1):
-            week_end = n_weeks * _WEEK - (week - 1) * _WEEK  # exclusive
-            week_prices = series[week_end - _WEEK : week_end]
-            running_max = 0
-            running_min = series[0]
-            for i in week_prices:
-                running_max = (max(running_max, i))
-                running_min = (min(running_min, i))
-            # drawdown (price - peak) / peak
-                values[f"{symbol}_drawdown_w{week}"] = [(running_max - running_min) / running_max]
-        return values
-
-        
-    
-        # Need at least 2 prices to compute any drawdown
-        if n < 2:
-            values[max_dd_key]      = float("nan")
-            values[curr_dd_key]     = float("nan")
-            values[weeks_since_key] = float("nan")
-            return values
-    
-        # Running maximum up to each point in the series
-        running_max = 0
-        running_min = 0
-        for i in range(1, n):
-            running_max = (max(running_max, series[i]))
-            running_min = (min(running_min, series[i]))
-        # Drawdown at each point: (price - peak) / peak
-        drawdowns = [
-            (running_max - running_min) / running_max
-        ]
-    
-        values[max_dd_key]  = min(drawdowns)
-        values[curr_dd_key] = drawdowns[-1]
-    
-        # Weeks since peak — scan backwards for last time price matched running max
-        peak = running_max[-1]
-        weeks_since = 0
-        for i in range(n - 1, -1, -1):
-            if series[i] >= peak:
-                weeks_since = (n - 1 - i) // _WEEK
-                break
-    
-        values[weeks_since_key] = float(weeks_since)
-        return values
-        
-    
-    
-    def std(series: list[float]) -> float:
-        n = len(series)
-        variance = 0
-        if n<2:
-            return 0.0
-        mean = sum(series)/n
-        for v in series:
-            variance = variance + (v-mean)**2
-        return math.sqrt(variance/(n-1))
-
-    #@staticmethod
-    def normalize(symbol: str, series: list[float]) -> dict[str, float]:
-        #z-scores for returns and vol
-        values: dict[str, float] = {}
-        n = len(series)
-        n_weeks = n // _WEEK
-
-        if n_weeks < 2:
-            return values
-
-        weekly_returns: list[float] = []
-        weekly_vols: list[float] = []
-
-        for w in range(n_weeks):
-            start = w * _WEEK
-            end = start + _WEEK
-            week_slice = series[start:end]
-            prev_close = series[start - 1] if start > 0 else series[0]
-            weekly_returns.append((week_slice[-1] / prev_close) - 1.0)
-            weekly_vols.append(FeatureBuilder.std(week_slice) * math.sqrt(252))
-
-        ret_mean = sum(weekly_returns) / n_weeks
-        ret_std = FeatureBuilder.std(weekly_returns)
-        vol_mean = sum(weekly_vols) / n_weeks
-        vol_std = FeatureBuilder.std(weekly_vols)
-
-        for k, (r, v) in enumerate(zip(weekly_returns, weekly_vols), start=1):
-            values[f"{symbol}_return_z_w{k}"] = ((r - ret_mean) / ret_std if ret_std > 1e-10 else 0.0)
-            values[f"{symbol}_vol_z_w{k}"] = ((v - vol_mean) / vol_std if vol_std > 1e-10 else 0.0)
-
-        #week_over_week change
-        for i in range(1, n_weeks + 1):
-            idx = n_weeks - i  # w1 = most recent week
-
-            if idx > 0:
-                ret_wow = weekly_returns[idx] - weekly_returns[idx - 1]
-                vol_wow = weekly_vols[idx] - weekly_vols[idx - 1]
-            else:
-                ret_wow = 0.0
-                vol_wow = 0.0
-
-            values[f"{symbol}_return_wow_w{i}"] = ret_wow
-            values[f"{symbol}_vol_wow_w{i}"] = vol_wow
-
-            #acceleration: second derivative of returns and vol
-            if idx > 1:
-                prior_ret_wow = weekly_returns[idx - 1] - weekly_returns[idx - 2]
-                prior_vol_wow = weekly_vols[idx - 1] - weekly_vols[idx - 2]
-                values[f"{symbol}_return_acc_w{i}"] = ret_wow - prior_ret_wow
-                values[f"{symbol}_vol_acc_w{i}"] = vol_wow - prior_vol_wow
-            else:
-                values[f"{symbol}_return_acc_w{i}"] = 0.0
-                values[f"{symbol}_vol_acc_w{i}"] = 0.0
-    
-
-        return values
-    #@staticmethod
-    def wow_and_acceleration(symbol: str, series: list[float]) -> dict[str, float]:
-   
-        Compute week-over-week change and acceleration (change-in-change) for
-        weekly returns and realised vol directly from the price series.
-        No history parameter required.
-
-        Keys produced:
-            {symbol}_return_wow_w{k}  — return WoW change at week k (w1 = most recent)
-            {symbol}_return_acc_w{k}  — return acceleration at week k
-            {symbol}_vol_wow_w{k}     — vol WoW change at week k
-            {symbol}_vol_acc_w{k}     — vol acceleration at week k
- 
-        values: dict[str, float] = {}
-        n = len(series)
-        n_weeks = n // _WEEK
-
-        if n_weeks < 2:
-            return values
-
-        weekly_returns: list[float] = []
-        weekly_vols: list[float] = []
-
-        for w in range(n_weeks):
-            start = w * _WEEK
-            end = start + _WEEK
-            week_slice = series[start:end]
-            prev_close = series[start - 1] if start > 0 else series[0]
-            weekly_returns.append((week_slice[-1] / prev_close) - 1.0)
-            weekly_vols.append(FeatureBuilder.std(week_slice) * math.sqrt(252))
-
-        for i in range(1, n_weeks + 1):
-            idx = n_weeks - i  # w1 = most recent week
-
-            # week-over-week change: needs a prior week
-            if idx > 0:
-                ret_wow = weekly_returns[idx] - weekly_returns[idx - 1]
-                vol_wow = weekly_vols[idx] - weekly_vols[idx - 1]
-            else:
-                ret_wow = float("nan")
-                vol_wow = float("nan")
-
-            values[f"{symbol}_return_wow_w{k}"] = ret_wow
-            values[f"{symbol}_vol_wow_w{k}"] = vol_wow
-
-            # acceleration: change in the wow change; needs two prior weeks
-            if idx > 1:
-                prior_ret_wow = weekly_returns[idx - 1] - weekly_returns[idx - 2]
-                prior_vol_wow = weekly_vols[idx - 1] - weekly_vols[idx - 2]
-                values[f"{symbol}_return_acc_w{k}"] = ret_wow - prior_ret_wow
-                values[f"{symbol}_vol_acc_w{k}"] = vol_wow - prior_vol_wow
-            else:
-                values[f"{symbol}_return_acc_w{k}"] = float("nan")
-                values[f"{symbol}_vol_acc_w{k}"] = float("nan")
-
-        return values
-
-    def wk_over_wk (symbol: str, series: dict[str, float]):
-
-            # ---- Week-over-week change ----
-            # Need at least 1 history entry
-            if n_history >= 1:
-                prior = history[-1].get(key, float("nan"))
-                values[f"{key}_wow"] = (
-                    current_val - prior if not _is_nan(prior) else float("nan")
-                )
-            else:
-                values[f"{key}_wow"] = float("nan")
-    
-            # ---- Acceleration (change in the change) ----
-            # Need at least 2 history entries
-            if n_history >= 2:
-                prior       = history[-1].get(key, float("nan"))
-                prior_prior = history[-2].get(key, float("nan"))
-                if not _is_nan(prior) and not _is_nan(prior_prior):
-                    prior_wow   = prior - prior_prior
-                    current_wow = values.get(f"{key}_wow", float("nan"))
-                    values[f"{key}_acc"] = (
-                        current_wow - prior_wow
-                        if not _is_nan(current_wow) else float("nan")
-                    )
-                else:
-                    values[f"{key}_acc"] = float("nan")
-            else:
-                values[f"{key}_acc"] = float("nan")
-    
-        return values
-    
-    
-
-    
-    def cross_asset(prices: dict[str, list[float]]) -> dict[str, float]:
-        # Average pairwise correlation and cross-sectional dispersion metrics.
-        # Keys are only emitted when there is sufficient data — no nan padding.
-        values: dict[str, float] = {}
-        symbols = list(prices.keys())
-
-        if len(symbols) < 2:
-            return values
-
-        # Align all series to the shortest length, then build daily return matrix
-        min_len = min(len(prices[s]) for s in symbols)
-        ret_matrix: list[list[float]] = []
-        for s in symbols:
-            series = prices[s][-min_len:]
-            ret_matrix.append([(series[i] / series[i - 1]) - 1.0 for i in range(1, len(series))])
-
-        n_periods = len(ret_matrix[0])
-
-        def _pearson(x: list[float], y: list[float]) -> float:
-            n = len(x)
-            if n < 2:
-                return 0.0
-            mx = sum(x) / n
-            my = sum(y) / n
-            cov = sum((x[i] - mx) * (y[i] - my) for i in range(n))
-            sx = math.sqrt(sum((v - mx) ** 2 for v in x))
-            sy = math.sqrt(sum((v - my) ** 2 for v in y))
-            if sx < 1e-12 or sy < 1e-12:
-                return 0.0
-            return cov / (sx * sy)
-
-        def _avg_pairwise_corr(matrix: list[list[float]]) -> float:
-            total, pairs = 0.0, 0
-            for i in range(len(matrix)):
-                for j in range(i + 1, len(matrix)):
-                    total += _pearson(matrix[i], matrix[j])
-                    pairs += 1
-            return total / pairs if pairs else 0.0
-
-        # Average pairwise correlation over 1w / 4w / 13w windows
-        for label, window in [("1w", _WEEK), ("4w", 4 * _WEEK), ("13w", 13 * _WEEK)]:
-            if n_periods >= window:
-                sliced = [rets[-window:] for rets in ret_matrix]
-                values[f"cross_avg_corr_{label}"] = _avg_pairwise_corr(sliced)
-
-        # Cross-sectional return dispersion: std of cumulative returns across assets
-        for label, window in [("1w", _WEEK), ("4w", 4 * _WEEK)]:
-            if n_periods >= window:
-                asset_rets = [sum(rets[-window:]) for rets in ret_matrix]
-                values[f"cross_dispersion_{label}"] = FeatureBuilder.std(asset_rets)
-
-        # Cross-sectional vol dispersion: std of realised vol across assets
-        for label, window in [("1w", _WEEK), ("4w", 4 * _WEEK)]:
-            if n_periods >= window:
-                asset_vols = [
-                    FeatureBuilder.std(rets[-window:]) * math.sqrt(252)
-                    for rets in ret_matrix
-                ]
-                values[f"cross_vol_dispersion_{label}"] = FeatureBuilder.std(asset_vols)
-
-        # Return spread: max minus min cumulative return over 1w / 4w (regime width)
-        for label, window in [("1w", _WEEK), ("4w", 4 * _WEEK)]:
-            if n_periods >= window:
-                asset_rets = [sum(rets[-window:]) for rets in ret_matrix]
-                values[f"cross_return_spread_{label}"] = max(asset_rets) - min(asset_rets)
-
-        return values
-        
-    
-    
-        values[f"{symbol}_return_1"] = (series[-1] / series[-2]) - 1.0
-
-            if n >= _WEEK + 1:
-                values[f"{symbol}_return_5"] = (series[-1] / series[-(_WEEK + 1)]) - 1.0
-                daily_rets = [
-                    (series[i] / series[i - 1]) - 1.0
-                    for i in range(n - _WEEK, n)
-                ]
-                mean = sum(daily_rets) / _WEEK
-                variance = sum((r - mean) ** 2 for r in daily_rets) / (_WEEK - 1)
-                values[f"{symbol}_vol_5"] = math.sqrt(variance)
-                '''
-        
 from __future__ import annotations
 
 import math
@@ -494,6 +59,7 @@ class FeatureBuilder:
         values.update(self.macro_features(weekly_macro))
         values.update(self.robust_zscores(values, returns, weekly_returns, weekly_macro))
         values.update(self.dynamics(weekly_macro))
+        values.update(self.derive_expert_features(values))
 
         return FeatureRow(
             as_of_date=as_of_date,
@@ -869,6 +435,129 @@ class FeatureBuilder:
         if mad < 1e-10:
             return 0.0
         return (current - median) / mad
+
+    # ------------------------------------------------------------------
+    # Expert feature bridge
+    # ------------------------------------------------------------------
+    def derive_expert_features(self, values: dict[str, float]) -> dict[str, float]:
+        """Map builder-computed features to the keys each expert expects.
+
+        For features that genuinely cannot be derived from market data
+        (they come from the event pipeline), we default to 0.0 or 0.5 as
+        appropriate and leave a comment.
+        """
+        ef: dict[str, float] = {}
+
+        # --- helpers ---------------------------------------------------
+        def _get(key: str, default: float = 0.0) -> float:
+            v = values.get(key, default)
+            return default if math.isnan(v) else v
+
+        def _normalize_vol(raw: float, floor: float = 0.0, cap: float = 1.0) -> float:
+            """Rough 0-1 normalization for annualized realized vol.
+
+            Typical SPY rvol is 0.10–0.40; we map [0, 0.60] -> [0, 1].
+            """
+            return max(floor, min(cap, raw / 0.60))
+
+        # ---------------------------------------------------------------
+        # MarketPricingExpert
+        # ---------------------------------------------------------------
+        ef["realized_volatility"] = _normalize_vol(_get("SPY_rvol_20d"))
+        ef["vol_of_vol"] = min(1.0, _get("SPY_vol_of_vol") / 0.15)  # 0.15 annualized std-of-vol is extreme
+        # Cross-asset correlation spike: use max absolute delta across key pairs
+        corr_deltas = [
+            abs(_get(f"corr_{a}_{b}_delta"))
+            for a, b in CORR_PAIRS
+        ]
+        ef["cross_asset_correlation_spike"] = min(1.0, max(corr_deltas) / 0.30) if corr_deltas else 0.0
+        ef["dispersion_commodities"] = min(1.0, _get("dispersion_commodities") / 0.10)
+        # dispersion_single_names: use sector dispersion as proxy
+        ef["dispersion_single_names"] = min(1.0, _get("dispersion_sectors") / 0.10)
+        # already_priced_indicator: VIX elevated + drawdown recovering → already priced
+        vix_z = _get("vix_close_w_z")
+        ef["already_priced_indicator"] = max(0.0, min(1.0, vix_z / 3.0)) if vix_z > 0 else 0.0
+        # market_depth: proxy via HY OAS z-score (wider spread → lower depth)
+        hy_z = _get("hy_oas_z")
+        ef["market_depth"] = max(0.0, min(1.0, 1.0 - hy_z / 4.0))
+
+        # ---------------------------------------------------------------
+        # CryptoRegimeExpert
+        # ---------------------------------------------------------------
+        ef["crypto_volatility"] = _normalize_vol(_get("BTC-USD_rvol_20d"), cap=1.0)
+        # crypto-equity correlation: use the builder's 20d corr of SPY vs BTC-USD
+        ef["crypto_equity_correlation"] = max(0.0, min(1.0,
+            (_get("corr_SPY_BTC-USD_20d", 0.5) + 1.0) / 2.0  # map [-1,1] -> [0,1]
+        ))
+        # usd_strength: map weekly USD return to 0-1 (positive = strong)
+        usd_ret = _get("usd_broad_ret_1w")
+        ef["usd_strength"] = max(0.0, min(1.0, 0.5 + usd_ret * 50))  # ±1% → 0/1
+        # liquidity_stress: proxy from HY OAS level z-score
+        ef["liquidity_stress"] = max(0.0, min(1.0, _get("hy_oas_z") / 3.0))
+        # risk_on_signal: equity + commodity momentum
+        ef["risk_on_signal"] = max(0.0, min(1.0,
+            0.5
+            + _get("SPY_ret_1w") * 20   # ~2.5% weekly move → 1.0
+            + _get("CL=F_ret_1w", 0.0) * 10
+        ))
+        # risk_off_signal: bond + gold demand
+        ef["risk_off_signal"] = max(0.0, min(1.0,
+            0.5
+            + _get("TLT_ret_1w", 0.0) * 20
+            + _get("GLD_ret_1w", 0.0) * 10
+        ))
+
+        # ---------------------------------------------------------------
+        # RatesPolicyExpert
+        # ---------------------------------------------------------------
+        ef["yield_change"] = _get("yield_10y_chg_1w")
+        ef["curve_slope_change"] = _get("curve_10y2y_chg_1w")
+        # inflation_proxy_drift: use breakeven 5y wow change
+        ef["inflation_proxy_drift"] = _get("breakeven_5y_wow_chg", 0.0)
+        # cb_language_intensity — event pipeline feature, not derivable from market data
+        ef["cb_language_intensity"] = 0.5  # event pipeline
+        # cb_language_shift — event pipeline feature
+        ef["cb_language_shift"] = 0.0  # event pipeline
+        # hawkish_shock_flag — event pipeline feature
+        ef["hawkish_shock_flag"] = 0.0  # event pipeline
+        # easing_shock_flag — event pipeline feature
+        ef["easing_shock_flag"] = 0.0  # event pipeline
+
+        # ---------------------------------------------------------------
+        # ShippingChokePointExpert
+        # ---------------------------------------------------------------
+        # chokepoint_intensity — event pipeline feature (shipping incident data)
+        ef["chokepoint_intensity"] = 0.0  # event pipeline
+        # incident_novelty — event pipeline feature
+        ef["incident_novelty"] = 0.0  # event pipeline
+        # incident_count — event pipeline feature
+        ef["incident_count"] = 0.0  # event pipeline
+        # port_stress — event pipeline feature
+        ef["port_stress"] = 0.0  # event pipeline
+        # energy_move: oil WTI weekly return magnitude, normalized
+        ef["energy_move"] = min(1.0, abs(_get("oil_wti_ret_1w")) * 20)
+        # freight_proxy_move: not directly available; default to 0
+        ef["freight_proxy_move"] = 0.0  # event pipeline / freight index
+        # correlation_change: use CL=F-GLD correlation delta as shipping proxy
+        ef["correlation_change"] = min(1.0, abs(_get("corr_CL=F_GLD_delta")) / 0.25)
+
+        # ---------------------------------------------------------------
+        # ConflictEscalationExpert
+        # ---------------------------------------------------------------
+        # escalation_intensity — event pipeline feature (NLP / incident scoring)
+        ef["escalation_intensity"] = 0.0  # event pipeline
+        # escalation_acceleration — event pipeline feature
+        ef["escalation_acceleration"] = 0.0  # event pipeline
+        # sanctions_mentions — event pipeline feature (news count)
+        ef["sanctions_mentions"] = 0.0  # event pipeline
+        # sanctions_direction — event pipeline feature; 0.5 = neutral default
+        ef["sanctions_direction"] = 0.5  # event pipeline
+        # spillover_flag — event pipeline feature
+        ef["spillover_flag"] = 0.0  # event pipeline
+        # region_volatility: proxy from EEM realized vol
+        ef["region_volatility"] = _normalize_vol(_get("EEM_rvol_20d", 0.0))
+
+        return ef
 
     @staticmethod
     def _std(values: list[float]) -> float:

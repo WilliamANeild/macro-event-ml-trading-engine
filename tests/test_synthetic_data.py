@@ -4,27 +4,30 @@ from src.engine.data.synthetic_events import SyntheticEventGenerator
 
 def test_synthetic_prices_shape():
     gen = SyntheticDataGenerator()
+    cfg = gen.config
     prices = gen.load_prices()
-    assert len(prices) == 3
-    for sym in ["XLE", "ITA", "SEA"]:
+    assert len(prices) == len(cfg.symbols)
+    for sym in cfg.symbols:
         assert sym in prices
-        assert len(prices[sym]) == 504
+        assert len(prices[sym]) == cfg.n_days
 
 
 def test_synthetic_returns():
     gen = SyntheticDataGenerator()
+    cfg = gen.config
     gen.load_prices()
     returns = gen.get_returns()
-    assert returns.shape == (504, 3)
-    assert list(returns.columns) == ["XLE", "ITA", "SEA"]
+    assert returns.shape == (cfg.n_days, len(cfg.symbols))
+    assert list(returns.columns) == cfg.symbols
 
 
 def test_event_manifest():
     gen = SyntheticDataGenerator()
+    cfg = gen.config
     gen.load_prices()
-    assert len(gen.event_manifest) == 5
+    assert len(gen.event_manifest) == cfg.n_shocks
     for shock in gen.event_manifest:
-        assert shock.symbol in ["XLE", "ITA", "SEA"]
+        assert shock.symbol in cfg.symbols
 
 
 def test_feature_history():
@@ -33,8 +36,8 @@ def test_feature_history():
     features = gen.generate_feature_history()
     assert len(features) > 0
     row = features[0]
-    assert "XLE_return_1d" in row.values
-    assert "SEA_vol_20d" in row.values
+    assert "SPY_return_1d" in row.values
+    assert "SPY_vol_20d" in row.values
 
 
 def test_synthetic_events():
@@ -53,7 +56,7 @@ def test_custom_config():
     cfg = SyntheticConfig(n_days=100, n_shocks=2, seed=123)
     gen = SyntheticDataGenerator(config=cfg)
     prices = gen.load_prices()
-    assert len(prices["XLE"]) == 100
+    assert len(prices[cfg.symbols[0]]) == 100
     assert len(gen.event_manifest) == 2
 
 
@@ -62,4 +65,4 @@ def test_reproducibility():
     gen2 = SyntheticDataGenerator(config=SyntheticConfig(seed=42))
     p1 = gen1.load_prices()
     p2 = gen2.load_prices()
-    assert p1["XLE"] == p2["XLE"]
+    assert p1["SPY"] == p2["SPY"]

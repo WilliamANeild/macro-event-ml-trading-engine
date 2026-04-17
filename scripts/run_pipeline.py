@@ -5,6 +5,8 @@ import os
 import sys
 from datetime import date
 
+import pandas as pd
+
 from src.engine.backtest.engine import BacktestEngine
 from src.engine.data.loader import MockDataSource
 from src.engine.derivatives.overlay import DerivativesOverlayManager
@@ -31,11 +33,18 @@ def run_mock() -> None:
     print("stage 2: build features")
     as_of_date = date.today()
     feature_builder = FeatureBuilder()
+    prices_df, returns_df = FeatureBuilder.from_dict(prices)
+    # Add a DatetimeIndex so weekly resampling works
+    prices_df.index = pd.bdate_range(end=as_of_date, periods=len(prices_df))
+    returns_df.index = pd.bdate_range(end=as_of_date, periods=len(returns_df))
+    macro_df = pd.DataFrame(index=prices_df.index)  # empty macro for mock mode
     feature_row = feature_builder.build(
         as_of_date=as_of_date,
         theme="shipping",
         subtheme="suez",
-        prices=prices,
+        prices=prices_df,
+        returns=returns_df,
+        macro=macro_df,
     )
     print(f"built {len(feature_row.values)} features")
 
@@ -110,12 +119,26 @@ def run_full() -> None:
 
     print("stage 1: generate synthetic data")
     data_gen = SyntheticDataGenerator()
-    prices = data_gen.load_prices(symbols)
+    data_gen.load_prices(symbols)
     returns = data_gen.get_returns()
+    prices_df = data_gen.get_prices_df()
+    macro_df = data_gen.get_macro_df()
     print(f"generated {len(returns)} days of synthetic data")
 
     print("stage 2: build feature history")
-    features = data_gen.generate_feature_history()
+    feature_builder = FeatureBuilder()
+    features = []
+    for i in range(20, len(returns)):
+        dt = returns.index[i].date()
+        feat = feature_builder.build(
+            as_of_date=dt,
+            theme="macro",
+            subtheme="all",
+            prices=prices_df.iloc[:i + 1],
+            returns=returns.iloc[:i + 1],
+            macro=macro_df.iloc[:i + 1],
+        )
+        features.append(feat)
     print(f"built {len(features)} feature rows")
 
     print("stage 3: generate event history")
@@ -179,23 +202,41 @@ def run_live() -> None:
 
     print("stage 1: load live market data (Yahoo Finance)")
     yahoo = YahooDataSource()
-    returns = yahoo.load_returns(symbols, start_date="2023-01-01")
+    prices_df = yahoo.load_prices(symbols, start="2023-01-01")
+    returns = prices_df.pct_change().dropna()
     print(f"loaded {len(returns)} days of returns for {list(returns.columns)}")
 
-    # Use latest returns for features
-    as_of_date = returns.index[-1].date()
-    feat_values: dict[str, float] = {}
-    for sym in symbols:
-        feat_values[f"{sym}_return_1d"] = float(returns[sym].iloc[-1])
-        feat_values[f"{sym}_return_5d"] = float(returns[sym].iloc[-5:].sum())
-        feat_values[f"{sym}_vol_20d"] = float(returns[sym].iloc[-20:].std())
+    print("stage 1b: load macro data (FRED)")
+    try:
+        from src.engine.data.fred_loader import FREDDataSource
+        fred = FREDDataSource()
+        macro_df = fred.load_macro(start="2023-01-01")
+        # Align macro index with prices index
+        macro_df = macro_df.reindex(prices_df.index).ffill().fillna(0.0)
+    except Exception as e:
+        print(f"  FRED unavailable ({e}), using empty macro DataFrame")
+        macro_df = pd.DataFrame(index=prices_df.index)
 
-    print("stage 2: build expert context")
+    print("stage 2: build features via FeatureBuilder")
+    as_of_date = returns.index[-1].date()
+    feature_builder = FeatureBuilder()
+    feature_row = feature_builder.build(
+        as_of_date=as_of_date,
+        theme="macro",
+        subtheme="all",
+        prices=prices_df,
+        returns=returns,
+        macro=macro_df,
+    )
+
+    print(f"  built {len(feature_row.values)} features")
+
+    print("stage 2b: build expert context")
     context = ExpertContext(
         as_of_date=as_of_date,
         theme="macro",
         subtheme="all",
-        feature_row=feat_values,
+        feature_row=feature_row.values,
         event_features={},
         universe=symbols,
     )

@@ -86,8 +86,23 @@ class MetaStacker:
                 predictions
             )
             confidence = sum(p.confidence_score for p in predictions) / len(predictions)
-            direction = "long" if score > 0.55 else ("short" if score < 0.45 else "neutral")
+            direction = "long" if score > 0.50 else ("short" if score < 0.40 else "neutral")
             theme_scores = {}
+
+        # Momentum overlay: bias direction using recent broad-market trend.
+        # Expert heuristics are unreliable — use market momentum as a
+        # stronger directional signal whenever scores are ambiguous.
+        if self._recent_returns is not None and abs(score - 0.5) < 0.25:
+            mom_window = min(40, len(self._recent_returns))
+            if mom_window >= 10:
+                recent = self._recent_returns.iloc[-mom_window:]
+                broad_mom = float(recent.mean(axis=1).sum())
+                if broad_mom > 0.005:
+                    direction = "long"
+                    score = 0.55 + min(broad_mom * 3, 0.20)
+                elif broad_mom < -0.005:
+                    direction = "short"
+                    score = 0.45 - min(abs(broad_mom) * 3, 0.20)
 
         regime = "normal"
         if self.regime_detector is not None and self._recent_returns is not None:

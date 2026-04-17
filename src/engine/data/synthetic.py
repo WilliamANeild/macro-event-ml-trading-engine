@@ -21,15 +21,15 @@ class EventShock:
 
 @dataclass
 class SyntheticConfig:
-    symbols: list[str] = field(default_factory=lambda: ["XLE", "ITA", "SEA"])
+    symbols: list[str] = field(default_factory=lambda: ["SPY", "TLT", "GLD", "XLE", "ITA", "SEA", "BTC-USD"])
     n_days: int = 504
     start_date: date = field(default_factory=lambda: date(2022, 1, 3))
     drift: float = 0.0002
     vol: float = 0.015
     correlation: float = 0.4
-    n_shocks: int = 5
-    shock_vol_mult: float = 3.0
-    shock_mean_shift: float = -0.03
+    n_shocks: int = 8
+    shock_vol_mult: float = 5.0
+    shock_mean_shift: float = -0.05
     seed: int = 42
 
 
@@ -62,7 +62,7 @@ class SyntheticDataGenerator(BaseDataSource):
         # Generate event shocks
         self.event_manifest = []
         shock_days = sorted(self.rng.choice(range(50, n - 20), size=cfg.n_shocks, replace=False))
-        themes = ["energy", "defense", "shipping"]
+        themes = ["macro", "rates_us", "commodities", "energy", "defense", "shipping", "crypto"]
         for i, day_idx in enumerate(shock_days):
             sym_idx = i % k
             sym = symbols[sym_idx]
@@ -108,6 +108,59 @@ class SyntheticDataGenerator(BaseDataSource):
     def get_dates(self) -> list[date]:
         returns = self.get_returns()
         return [d.date() for d in returns.index]
+
+    def get_prices_df(self) -> pd.DataFrame:
+        """Return prices as a DataFrame with DatetimeIndex and symbol columns."""
+        if self._prices is None:
+            self.load_prices()
+        assert self._prices is not None and self._returns_df is not None
+        return pd.DataFrame(self._prices, index=self._returns_df.index)
+
+    def get_macro_df(self) -> pd.DataFrame:
+        """Generate synthetic macro data matching FeatureBuilder expected columns.
+
+        Uses a random-walk process seeded from the existing RNG for
+        reproducibility.  Starting values are chosen to be realistic as of
+        ~2022.
+        """
+        if self._returns_df is None:
+            self.load_prices()
+        assert self._returns_df is not None
+
+        dates = self._returns_df.index
+        n = len(dates)
+        rng = np.random.default_rng(self.config.seed + 1)  # offset seed to avoid collision
+
+        # (column_name, start_value, daily_vol)
+        specs: list[tuple[str, float, float]] = [
+            ("vix_close",         18.0,   0.80),
+            ("yield_2y",           2.5,   0.02),
+            ("yield_5y",           2.8,   0.02),
+            ("yield_10y",          3.0,   0.02),
+            ("curve_10y2y",        0.5,   0.01),
+            ("curve_10y3m",        0.8,   0.01),
+            ("fed_funds",          0.25,  0.005),
+            ("real_rate_10y",      0.0,   0.01),
+            ("breakeven_5y",       2.5,   0.01),
+            ("breakeven_10y",      2.3,   0.01),
+            ("fwd_inflation_5y5y", 2.2,   0.01),
+            ("hy_oas",             4.0,   0.03),
+            ("ig_oas",             1.2,   0.01),
+            ("oil_wti",           80.0,   1.00),
+            ("oil_brent",         85.0,   1.00),
+            ("usd_broad",        100.0,   0.20),
+        ]
+
+        data: dict[str, np.ndarray] = {}
+        for col, start, dvol in specs:
+            shocks = rng.standard_normal(n) * dvol
+            series = start + np.cumsum(shocks)
+            # VIX and spreads should stay positive
+            if col in ("vix_close", "hy_oas", "ig_oas", "oil_wti", "oil_brent", "usd_broad"):
+                series = np.maximum(series, 0.5)
+            data[col] = series
+
+        return pd.DataFrame(data, index=dates)
 
     def generate_feature_history(self) -> list[FeatureRow]:
         returns = self.get_returns()

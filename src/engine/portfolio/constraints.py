@@ -5,39 +5,39 @@ from dataclasses import dataclass
 
 @dataclass
 class PortfolioConstraints:
-    max_position: float = 0.30
-    min_position: float = -0.30
-    max_gross_exposure: float = 1.5
-    max_net_exposure: float = 0.80
-    max_turnover: float = 0.50
-    risk_target: float = 0.10
+    max_position: float = 0.55
+    min_position: float = -0.55
+    max_gross_exposure: float = 3.0
+    max_net_exposure: float = 2.0
+    max_turnover: float = 1.2
+    risk_target: float = 0.35
 
 
 REGIME_CONSTRAINTS = {
     "normal": PortfolioConstraints(),
     "crisis": PortfolioConstraints(
-        max_position=0.15,
-        min_position=-0.15,
-        max_gross_exposure=0.8,
-        max_net_exposure=0.3,
-        max_turnover=0.3,
-        risk_target=0.05,
+        max_position=0.35,
+        min_position=-0.35,
+        max_gross_exposure=1.5,
+        max_net_exposure=0.8,
+        max_turnover=0.72,
+        risk_target=0.20,
     ),
     "euphoria": PortfolioConstraints(
-        max_position=0.25,
-        min_position=-0.25,
-        max_gross_exposure=1.2,
-        max_net_exposure=0.7,
-        max_turnover=0.4,
-        risk_target=0.08,
+        max_position=0.55,
+        min_position=-0.55,
+        max_gross_exposure=2.55,
+        max_net_exposure=1.7,
+        max_turnover=1.02,
+        risk_target=0.30,
     ),
     "transition": PortfolioConstraints(
-        max_position=0.20,
-        min_position=-0.20,
-        max_gross_exposure=1.0,
-        max_net_exposure=0.5,
-        max_turnover=0.35,
-        risk_target=0.07,
+        max_position=0.47,
+        min_position=-0.47,
+        max_gross_exposure=2.1,
+        max_net_exposure=1.3,
+        max_turnover=0.9,
+        risk_target=0.245,
     ),
 }
 

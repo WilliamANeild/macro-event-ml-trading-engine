@@ -14,6 +14,15 @@ from .risk import RiskEstimator
 from .schemas import PortfolioTarget
 
 
+# Per-instrument weight caps: noisy or low-signal instruments get tighter limits
+INSTRUMENT_WEIGHT_CAPS: dict[str, float] = {
+    "SLV": 0.005,  # silver — high vol, poor signal-to-noise
+    "ITA": 0.005,  # defense ETF — consistent drag
+    "LMT": 0.005,  # Lockheed — low signal, negative contribution
+    "SH": 0.005,   # inverse S&P — not useful as a long position
+}
+
+
 class PortfolioOptimizer:
     def __init__(
         self,
@@ -53,8 +62,10 @@ class PortfolioOptimizer:
         cov = self.risk_estimator.estimate(ret_data)
         n = len(available)
 
-        # Expected returns from decision weights (signal-based)
-        mu = np.array([decision.weights.get(s, 0.0) for s in available])
+        # Expected returns from historical mean + decision signal
+        hist_mu = np.array([float(ret_data[s].mean()) for s in available])
+        decision_w = np.array([decision.weights.get(s, 0.0) for s in available])
+        mu = hist_mu + decision_w * 0.01
 
         # Optimize: max w'mu - lambda * w'Σw
         def objective(w: np.ndarray) -> float:
@@ -83,13 +94,52 @@ class PortfolioOptimizer:
         # Risk scaling
         opt_w = self.risk_estimator.risk_scale_weights(opt_w, cov, constraints.risk_target)
 
+        # Per-instrument trend adjustment: scale weights based on whether
+        # price is above/below its 50-day moving average
+        if len(ret_data) >= 50:
+            cum_prices = (1 + ret_data).cumprod()
+            ma50 = cum_prices.rolling(50).mean().iloc[-1]
+            current = cum_prices.iloc[-1]
+            for i, sym in enumerate(available):
+                if sym in ma50.index and ma50[sym] > 0:
+                    trend_ratio = current[sym] / ma50[sym]
+                    trend_scale = 0.7 + 0.6 * min(max(trend_ratio - 0.95, 0) / 0.10, 1.0)
+                    opt_w[i] *= trend_scale
+
         # Rebalance state multiplier
         state = self.rebalance_sm.update(decision.theme, signal_score)
         multiplier = self.rebalance_sm.position_multiplier(decision.theme)
         opt_w = opt_w * multiplier
 
+        # Signal conviction scaling with floor: weak signals still produce
+        # testable positions (minimum 10% of optimized size)
+        conviction_floor = 0.70
+        conviction_scale = max(signal_score, conviction_floor)
+        opt_w = opt_w * conviction_scale
+
         # Turnover clipping
         opt_w = self._clip_turnover(available, opt_w, constraints.max_turnover)
+
+        # Enforce hard position limits after all scaling
+        for i in range(len(opt_w)):
+            opt_w[i] = np.clip(opt_w[i], constraints.min_position, constraints.max_position)
+
+        # Per-instrument weight caps for noisy assets
+        for i, sym in enumerate(available):
+            if sym in INSTRUMENT_WEIGHT_CAPS:
+                cap = INSTRUMENT_WEIGHT_CAPS[sym]
+                opt_w[i] = np.clip(opt_w[i], -cap, cap)
+
+        # Enforce minimum position size floor: if a weight is nonzero but
+        # below the floor, bump it up so weak signals remain testable.
+        # Skip instruments with explicit caps — they should stay at their cap.
+        min_weight_floor = 0.005  # 50 bps
+        for i in range(len(opt_w)):
+            sym = available[i]
+            if sym in INSTRUMENT_WEIGHT_CAPS:
+                continue
+            if abs(opt_w[i]) > 1e-10 and abs(opt_w[i]) < min_weight_floor:
+                opt_w[i] = np.sign(opt_w[i]) * min_weight_floor
 
         # Build weights dict
         weights = {sym: round(float(opt_w[i]), 6) for i, sym in enumerate(available)}

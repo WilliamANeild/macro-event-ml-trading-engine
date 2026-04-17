@@ -42,7 +42,7 @@ def test_optimized_target():
     decision = _make_decision()
     target = optimizer.build_target(decision, regime="normal", signal_score=0.6)
     assert target.gross_exposure > 0
-    assert all(abs(w) <= 0.35 for w in target.weights.values())
+    assert all(abs(w) <= 0.55 for w in target.weights.values())
 
 
 def test_crisis_constraints():

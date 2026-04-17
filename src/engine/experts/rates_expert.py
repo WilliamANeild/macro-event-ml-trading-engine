@@ -71,23 +71,26 @@ class RatesPolicyExpert(BaseExpert):
                     severity = float(np.clip(values[0] if values is not None else abs(yield_change), 0, 1))
                 else:
                     probability_active, severity, regime = self._heuristic_predict(
-                        yield_change, cb_language_intensity, hawkish_shock_flag, easing_shock_flag
+                        yield_change, curve_slope_change, cb_language_intensity,
+                        hawkish_shock_flag, easing_shock_flag, features,
                     )
             except Exception:
                 probability_active, severity, regime = self._heuristic_predict(
-                    yield_change, cb_language_intensity, hawkish_shock_flag, easing_shock_flag
+                    yield_change, curve_slope_change, cb_language_intensity,
+                    hawkish_shock_flag, easing_shock_flag, features,
                 )
         else:
             probability_active, severity, regime = self._heuristic_predict(
-                yield_change, cb_language_intensity, hawkish_shock_flag, easing_shock_flag
+                yield_change, curve_slope_change, cb_language_intensity,
+                hawkish_shock_flag, easing_shock_flag, features,
             )
-        
+
         # Confidence from CB language shift consistency and shock flags
         confidence = min(
             1.0,
             0.3 + 0.3 * abs(cb_language_shift)
             + 0.2 * (hawkish_shock_flag + easing_shock_flag)
-            + 0.2 * abs(yield_change) * 10,  # Higher yield moves = more confident
+            + 0.2 * min(1.0, abs(yield_change) * 100),  # 1bp=0.1, 10bp=1.0
         )
         
         # Direction based on regime and yield move
@@ -130,28 +133,45 @@ class RatesPolicyExpert(BaseExpert):
     def _heuristic_predict(
         self,
         yield_change: float,
+        curve_slope_change: float,
         cb_language_intensity: float,
         hawkish_shock_flag: float,
         easing_shock_flag: float,
+        features: dict,
     ) -> tuple[float, float, str]:
         """Fallback heuristic when model not fitted."""
-        # Probability active if shock or yield move
+        # yield_change is raw weekly change (e.g., 0.003 = 3bp).
+        # Scale: 5bp move is moderate, 15bp is large.
+        yield_signal = min(1.0, abs(yield_change) / 0.0015)  # 15bp -> 1.0
+        curve_signal = min(1.0, abs(curve_slope_change) / 0.002)  # 20bp -> 1.0
+
+        # VIX-based confirmation: elevated VIX suggests rates stress
+        vix = features.get("vix_close_w", 0.0)
+        vix_signal = max(0.0, min(1.0, (vix - 15.0) / 15.0))  # 15=0, 30=1
+
+        # Probability active: combine yield move, curve move, VIX, and event flags
         probability_active = min(
             1.0,
-            0.3 * (hawkish_shock_flag + easing_shock_flag)
-            + 0.4 * min(1.0, abs(yield_change) * 50)  # Normalize: 2bp = 0.1
-            + 0.3 * cb_language_intensity,
+            0.25 * (hawkish_shock_flag + easing_shock_flag)
+            + 0.30 * yield_signal
+            + 0.20 * curve_signal
+            + 0.15 * vix_signal
+            + 0.10 * cb_language_intensity,
         )
-        
-        # Severity from yield move
-        severity = min(1.0, abs(yield_change) * 50)
-        
+
+        # Severity from yield and curve moves
+        severity = min(1.0, 0.6 * yield_signal + 0.4 * curve_signal)
+
         # Regime classification
         if hawkish_shock_flag > easing_shock_flag and cb_language_intensity > 0.6:
             regime = "hawkish_shock"
         elif easing_shock_flag > hawkish_shock_flag and cb_language_intensity < 0.4:
             regime = "easing_shock"
+        elif yield_change > 0.005:  # yields rising sharply (5bp+)
+            regime = "hawkish_drift"
+        elif yield_change < -0.005:  # yields falling sharply
+            regime = "easing_drift"
         else:
             regime = "stable"
-        
+
         return probability_active, severity, regime

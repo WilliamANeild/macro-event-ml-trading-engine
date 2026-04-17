@@ -71,7 +71,8 @@ class ShippingChokePointExpert(BaseExpert):
                     severity = float(np.clip(values[0] if values is not None else chokepoint_intensity, 0, 1))
                 else:
                     probability_active, severity = self._heuristic_predict(
-                        chokepoint_intensity, incident_novelty, incident_count, port_stress
+                        chokepoint_intensity, incident_novelty, incident_count,
+                        port_stress, features,
                     )
             except Exception:
                 probability_active, severity = self._heuristic_predict(
@@ -79,15 +80,19 @@ class ShippingChokePointExpert(BaseExpert):
                 )
         else:
             probability_active, severity = self._heuristic_predict(
-                chokepoint_intensity, incident_novelty, incident_count, port_stress
+                chokepoint_intensity, incident_novelty, incident_count,
+                port_stress, features,
             )
         
         # Confidence boosted by market confirmation (energy and freight moves)
         market_confirmation = max(energy_move, freight_proxy_move)
+        oil_ret_abs = abs(features.get("oil_wti_ret_1w", 0.0))
+        oil_conf = min(1.0, oil_ret_abs / 0.04)
         confidence = min(
             1.0,
-            0.3 + 0.4 * (chokepoint_intensity + incident_novelty) / 2.0
-            + 0.3 * market_confirmation,
+            0.3 + 0.25 * (chokepoint_intensity + incident_novelty) / 2.0
+            + 0.25 * market_confirmation
+            + 0.20 * oil_conf,
         )
         
         # Direction: long on shipping stress (higher costs, tighter capacity)
@@ -131,20 +136,53 @@ class ShippingChokePointExpert(BaseExpert):
         incident_novelty: float,
         incident_count: float,
         port_stress: float,
+        features: dict,
     ) -> tuple[float, float]:
         """Fallback heuristic when model not fitted."""
-        # Incident novelty + intensity = signal
-        probability_active = min(
-            1.0,
+        # Event-based signal (will be 0 when event pipeline not active)
+        event_signal = (
             0.4 * chokepoint_intensity
             + 0.3 * incident_novelty
-            + 0.2 * min(1.0, incident_count / 5.0)  # Normalize to 0-1
-            + 0.1 * port_stress,
+            + 0.2 * min(1.0, incident_count / 5.0)
+            + 0.1 * port_stress
         )
-        
+
+        # Market-based shipping disruption proxy:
+        # Oil price spike + elevated VIX + energy_move from bridge
+        oil_ret = abs(features.get("oil_wti_ret_1w", 0.0))
+        oil_signal = min(1.0, oil_ret / 0.04)  # 4% weekly oil move -> 1.0
+
+        energy_move = features.get("energy_move", 0.0)
+
+        # Shipping equity vol: look for any available rvol as proxy
+        shipping_vol = 0.0
+        for key, val in features.items():
+            if key.endswith("_rvol_20d") and isinstance(val, (int, float)) and val > 0:
+                shipping_vol = max(shipping_vol, min(1.0, val / 0.50))
+
+        # VIX as general stress
+        vix = features.get("vix_close_w", 0.0)
+        vix_signal = max(0.0, min(1.0, (vix - 16.0) / 20.0))
+
+        # Correlation change from bridge
+        corr_change = features.get("correlation_change", 0.0)
+
+        market_signal = (
+            0.35 * oil_signal
+            + 0.25 * energy_move
+            + 0.20 * shipping_vol
+            + 0.10 * vix_signal
+            + 0.10 * corr_change
+        )
+
+        probability_active = min(1.0, max(event_signal, market_signal))
+
         severity = min(
             1.0,
-            chokepoint_intensity + 0.3 * incident_novelty + 0.2 * port_stress,
+            max(
+                chokepoint_intensity + 0.3 * incident_novelty + 0.2 * port_stress,
+                0.5 * oil_signal + 0.3 * energy_move + 0.2 * shipping_vol,
+            ),
         )
-        
+
         return probability_active, severity
