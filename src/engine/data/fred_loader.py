@@ -13,6 +13,15 @@ DEFAULT_SERIES = {
     "DCOILWTICO": "oil_price",
     "DTWEXBGS": "usd_index",
     "T5YIE": "breakeven_inflation",
+    "T10YIE": "breakeven_inflation_10y",
+    "T10Y2Y": "curve_slope_10y2y",
+    "T10Y3M": "curve_slope_10y3m",
+    "DFF": "fed_funds_rate",
+    "DFII10": "real_rate_10y",
+    "T5YIFR": "forward_inflation_5y",
+    "BAMLH0A0HYM2": "hy_credit_spread",
+    "BAMLC0A0CM": "ig_credit_spread",
+    "DCOILBRENTEU": "brent_price",
 }
 
 
